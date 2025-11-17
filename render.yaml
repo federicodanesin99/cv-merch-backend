@@ -1,0 +1,17 @@
+services:
+  - type: web
+    name: mida-merch-backend
+    env: node
+    region: frankfurt
+    plan: free
+    buildCommand: npm install && npx prisma generate
+    startCommand: node server.js
+    envVars:
+      - key: NODE_ENV
+        value: production
+      - key: DATABASE_URL
+        sync: false  # Set manualmente nel dashboard
+      - key: ADMIN_TOKEN
+        generateValue: true
+      - key: PORT
+        value: 10000
