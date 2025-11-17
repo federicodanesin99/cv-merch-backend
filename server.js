@@ -314,10 +314,10 @@ function generatePaymentUrl(order) {
 
   if (order.paymentMethod === 'paypal') {
     // Sostituisci con il tuo username PayPal
-    return `https://paypal.me/TUOUSERNAME/${amount}EUR?note=${encodeURIComponent(note)}`;
+    return `https://paypal.me/${process.env.PAYPAL_USER}/${amount}EUR?note=${encodeURIComponent(note)}`;
   } else {
     // Revolut Pay link (da configurare)
-    return `https://revolut.me/TUOUSERNAME/${amount}EUR`;
+    return `https://revolut.me/${process.env.REVOLUT_USER}/${amount}EUR`;
   }
 }
 
