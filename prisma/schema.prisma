@@ -1,0 +1,136 @@
+// This is your Prisma schema file,
+// learn more about it in the docs: https://pris.ly/d/prisma-schema
+
+// Looking for ways to speed up your queries, or scale easily with your serverless or edge functions?
+// Try Prisma Accelerate: https://pris.ly/cli/accelerate-init
+
+// schema.prisma - Database Schema per MIDA Merch Store
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider  = "postgresql"
+  url       = env("DATABASE_URL")
+  directUrl = env("DIRECT_URL")
+}
+
+// ====================================
+// PRODOTTI
+// ====================================
+model Product {
+  id          String   @id @default(uuid())
+  name        String   // "Hoody" o "Girocollo"
+  slug        String   @unique // "hoody", "girocollo"
+  basePrice   Float    // Prezzo normale (es. 49.00)
+  launchPrice Float?   // Prezzo lancio (es. 39.00), null se non in promo
+  isActive    Boolean  @default(true)
+  
+  // Attributi dinamici (JSON per flessibilità)
+  colors      Json     // ["Military Green"] o ["Blue Navy", "Dark Heather", ...]
+  sizes       Json     // ["S", "M", "L", "XL", "XXL"]
+  
+  // Inventario (opzionale, per futuro)
+  hasInventory Boolean @default(false)
+  
+  orderItems  OrderItem[]
+  
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+  
+  @@index([slug])
+}
+
+// ====================================
+// ORDINI
+// ====================================
+model Order {
+  id              String      @id @default(uuid())
+  orderNumber     Int         @unique @default(autoincrement()) // #0001, #0002, etc.
+  
+  // Dati cliente
+  customerEmail   String
+  customerName    String?
+  customerPhone   String?
+  
+  // Calcoli
+  subtotal        Float       // Totale prodotti
+  discount        Float       @default(0) // Sconto applicato (es. 5%)
+  total           Float       // Totale finale
+  
+  // Pagamento
+  paymentMethod   String      // "paypal" o "revolut"
+  paymentStatus   PaymentStatus @default(PENDING)
+  paymentId       String?     // ID transazione PayPal/Revolut (da email)
+  paidAt          DateTime?
+  
+  // Righe ordine
+  items           OrderItem[]
+  
+  // Log
+  notes           String?     // Note interne
+  createdAt       DateTime    @default(now())
+  updatedAt       DateTime    @updatedAt
+  
+  @@index([customerEmail])
+  @@index([paymentStatus])
+  @@index([createdAt])
+}
+
+enum PaymentStatus {
+  PENDING      // In attesa pagamento
+  PAID         // Pagato e confermato
+  FAILED       // Pagamento fallito
+  REFUNDED     // Rimborsato
+}
+
+// ====================================
+// RIGHE ORDINE
+// ====================================
+model OrderItem {
+  id          String   @id @default(uuid())
+  
+  order       Order    @relation(fields: [orderId], references: [id], onDelete: Cascade)
+  orderId     String
+  
+  product     Product  @relation(fields: [productId], references: [id])
+  productId   String
+  
+  // Dettagli articolo
+  color       String   // "Military Green"
+  size        String   // "M"
+  quantity    Int      // 2
+  unitPrice   Float    // 39.00 (prezzo al momento dell'ordine)
+  lineTotal   Float    // quantity * unitPrice
+  
+  createdAt   DateTime @default(now())
+  
+  @@index([orderId])
+}
+
+// ====================================
+// CONFIGURAZIONE SISTEMA
+// ====================================
+model Config {
+  id            String   @id @default(uuid())
+  key           String   @unique // "bundle_discount", "launch_active", etc.
+  value         Json     // Valore dinamico
+  description   String?
+  updatedAt     DateTime @updatedAt
+}
+
+// ====================================
+// LOG PAGAMENTI (per debug)
+// ====================================
+model PaymentLog {
+  id            String   @id @default(uuid())
+  orderId       String?
+  source        String   // "gmail_parser", "manual", "webhook"
+  rawData       Json     // Email completa o dati grezzi
+  status        String   // "matched", "unmatched", "error"
+  createdAt     DateTime @default(now())
+  
+  @@index([orderId])
+  @@index([createdAt])
+}
