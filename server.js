@@ -303,6 +303,89 @@ app.get('/api/admin/analytics', adminAuth, async (req, res) => {
   }
 });
 
+// ====================================
+// ADMIN API - GESTIONE PRODOTTI
+// ====================================
+
+// GET tutti i prodotti (admin view - include inattivi)
+app.get('/api/admin/products', adminAuth, async (req, res) => {
+  try {
+    const products = await prisma.product.findMany({
+      orderBy: { name: 'asc' }
+    });
+    res.json(products);
+  } catch (error) {
+    console.error('Error fetching products:', error);
+    res.status(500).json({ error: 'Errore nel recupero prodotti' });
+  }
+});
+
+// POST crea nuovo prodotto
+app.post('/api/admin/products', adminAuth, async (req, res) => {
+  try {
+    const { name, slug, basePrice, launchPrice, colors, sizes, isActive } = req.body;
+
+    // Validazione
+    if (!name || !slug || !basePrice) {
+      return res.status(400).json({ error: 'Dati prodotto incompleti' });
+    }
+
+    const product = await prisma.product.create({
+      data: {
+        name,
+        slug,
+        basePrice: parseFloat(basePrice),
+        launchPrice: launchPrice ? parseFloat(launchPrice) : null,
+        colors: colors || [],
+        sizes: sizes || ['S', 'M', 'L', 'XL', 'XXL'],
+        isActive: isActive !== undefined ? isActive : true
+      }
+    });
+
+    res.json(product);
+  } catch (error) {
+    console.error('Error creating product:', error);
+    res.status(500).json({ error: 'Errore nella creazione prodotto' });
+  }
+});
+
+// PUT aggiorna prodotto esistente
+app.put('/api/admin/products/:id', adminAuth, async (req, res) => {
+  try {
+    const { name, basePrice, launchPrice, colors, sizes, isActive } = req.body;
+
+    const product = await prisma.product.update({
+      where: { id: req.params.id },
+      data: {
+        ...(name && { name }),
+        ...(basePrice !== undefined && { basePrice: parseFloat(basePrice) }),
+        ...(launchPrice !== undefined && { launchPrice: launchPrice ? parseFloat(launchPrice) : null }),
+        ...(colors && { colors }),
+        ...(sizes && { sizes }),
+        ...(isActive !== undefined && { isActive })
+      }
+    });
+
+    res.json(product);
+  } catch (error) {
+    console.error('Error updating product:', error);
+    res.status(500).json({ error: 'Errore nell\'aggiornamento prodotto' });
+  }
+});
+
+// DELETE elimina prodotto
+app.delete('/api/admin/products/:id', adminAuth, async (req, res) => {
+  try {
+    await prisma.product.delete({
+      where: { id: req.params.id }
+    });
+    res.json({ success: true });
+  } catch (error) {
+    console.error('Error deleting product:', error);
+    res.status(500).json({ error: 'Errore nell\'eliminazione prodotto' });
+  }
+});
+
 // ==================================
 // HELPERS
 // ==================================
