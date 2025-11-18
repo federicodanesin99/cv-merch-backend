@@ -207,6 +207,7 @@ app.post('/api/admin/login', async (req, res) => {
     console.error('Login error:', error);
     res.status(500).json({ error: 'Errore durante il login' });
   }
+});
 
 // Middleware auth semplice
 const adminAuth = (req, res, next) => {
