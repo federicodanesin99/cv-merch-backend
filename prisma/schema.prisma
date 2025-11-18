@@ -30,6 +30,8 @@ model Product {
   // Attributi dinamici (JSON per flessibilità)
   colors      Json     // ["Military Green"] o ["Blue Navy", "Dark Heather", ...]
   sizes       Json     // ["S", "M", "L", "XL", "XXL"]
+
+  imageUrl    String?  // URL dell'immagine prodotto
   
   // Inventario (opzionale, per futuro)
   hasInventory Boolean @default(false)
