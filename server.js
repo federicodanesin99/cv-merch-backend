@@ -17,6 +17,20 @@ app.get('/health', (req, res) => {
   res.json({ status: 'ok', timestamp: new Date().toISOString() });
 });
 
+if (process.env.NODE_ENV === 'production') {
+  const BACKEND_URL = process.env.BACKEND_URL || 'https://cv-merch-backend.onrender.com';
+  
+  setInterval(async () => {
+    try {
+      await fetch(`${BACKEND_URL}/health`);
+      console.log('✅ Keep-alive ping');
+    } catch (err) {
+      console.error('❌ Keep-alive failed:', err);
+    }
+  }, 10 * 60 * 1000); // Ogni 10 minuti
+}
+
+
 // ==================================
 // PUBLIC API - STORE
 // ==================================
@@ -177,6 +191,22 @@ app.get('/api/orders/:id', async (req, res) => {
 // ==================================
 // ADMIN API (basic auth per ora)
 // ==================================
+app.post('/api/admin/login', async (req, res) => {
+  try {
+    const { username, password } = req.body;
+    
+    if (username === process.env.ADMIN_USER && password === process.env.ADMIN_PASSWORD) {
+      res.json({ 
+        token: process.env.ADMIN_TOKEN,
+        success: true 
+      });
+    } else {
+      res.status(401).json({ error: 'Credenziali non valide' });
+    }
+  } catch (error) {
+    console.error('Login error:', error);
+    res.status(500).json({ error: 'Errore durante il login' });
+  }
 
 // Middleware auth semplice
 const adminAuth = (req, res, next) => {
@@ -321,11 +351,11 @@ app.get('/api/admin/products', adminAuth, async (req, res) => {
 });
 
 // POST crea nuovo prodotto
+// POST crea nuovo prodotto - AGGIORNA
 app.post('/api/admin/products', adminAuth, async (req, res) => {
   try {
-    const { name, slug, basePrice, launchPrice, colors, sizes, isActive, imageUrl } = req.body;
+    const { name, slug, basePrice, launchPrice, colors, sizes, isActive, images } = req.body;
 
-    // Validazione
     if (!name || !slug || !basePrice) {
       return res.status(400).json({ error: 'Dati prodotto incompleti' });
     }
@@ -339,7 +369,7 @@ app.post('/api/admin/products', adminAuth, async (req, res) => {
         colors: colors || [],
         sizes: sizes || ['S', 'M', 'L', 'XL', 'XXL'],
         isActive: isActive !== undefined ? isActive : true,
-        imageUrl: imageUrl || null
+        images: images || [] // 🆕 Array di oggetti { color, urls }
       }
     });
 
@@ -350,10 +380,10 @@ app.post('/api/admin/products', adminAuth, async (req, res) => {
   }
 });
 
-// PUT aggiorna prodotto esistente
+// PUT aggiorna prodotto - AGGIORNA
 app.put('/api/admin/products/:id', adminAuth, async (req, res) => {
   try {
-    const { name, basePrice, launchPrice, colors, sizes, isActive, imageUrl } = req.body;
+    const { name, basePrice, launchPrice, colors, sizes, isActive, images } = req.body;
 
     const product = await prisma.product.update({
       where: { id: req.params.id },
@@ -364,7 +394,7 @@ app.put('/api/admin/products/:id', adminAuth, async (req, res) => {
         ...(colors && { colors }),
         ...(sizes && { sizes }),
         ...(isActive !== undefined && { isActive }),
-        ...(imageUrl !== undefined && { imageUrl })  // 🆕 AGGIUNGI QUESTO
+        ...(images !== undefined && { images }) // 🆕
       }
     });
 
