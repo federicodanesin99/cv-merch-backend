@@ -317,7 +317,7 @@ function generatePaymentUrl(order) {
     return `https://paypal.me/${process.env.PAYPAL_USER}/${amount}EUR?note=${encodeURIComponent(note)}`;
   } else {
     // Revolut Pay link (da configurare)
-    return `https://revolut.me/${process.env.REVOLUT_USER}/${amount}EUR`;
+    return `https://revolut.me/${process.env.REVOLUT_USER}`;
   }
 }
 
