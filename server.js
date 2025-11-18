@@ -323,7 +323,7 @@ app.get('/api/admin/products', adminAuth, async (req, res) => {
 // POST crea nuovo prodotto
 app.post('/api/admin/products', adminAuth, async (req, res) => {
   try {
-    const { name, slug, basePrice, launchPrice, colors, sizes, isActive } = req.body;
+    const { name, slug, basePrice, launchPrice, colors, sizes, isActive, imageUrl } = req.body;
 
     // Validazione
     if (!name || !slug || !basePrice) {
@@ -338,7 +338,8 @@ app.post('/api/admin/products', adminAuth, async (req, res) => {
         launchPrice: launchPrice ? parseFloat(launchPrice) : null,
         colors: colors || [],
         sizes: sizes || ['S', 'M', 'L', 'XL', 'XXL'],
-        isActive: isActive !== undefined ? isActive : true
+        isActive: isActive !== undefined ? isActive : true,
+        imageUrl: imageUrl || null
       }
     });
 
@@ -352,7 +353,7 @@ app.post('/api/admin/products', adminAuth, async (req, res) => {
 // PUT aggiorna prodotto esistente
 app.put('/api/admin/products/:id', adminAuth, async (req, res) => {
   try {
-    const { name, basePrice, launchPrice, colors, sizes, isActive } = req.body;
+    const { name, basePrice, launchPrice, colors, sizes, isActive, imageUrl } = req.body;
 
     const product = await prisma.product.update({
       where: { id: req.params.id },
@@ -362,7 +363,8 @@ app.put('/api/admin/products/:id', adminAuth, async (req, res) => {
         ...(launchPrice !== undefined && { launchPrice: launchPrice ? parseFloat(launchPrice) : null }),
         ...(colors && { colors }),
         ...(sizes && { sizes }),
-        ...(isActive !== undefined && { isActive })
+        ...(isActive !== undefined && { isActive }),
+        ...(imageUrl !== undefined && { imageUrl })  // 🆕 AGGIUNGI QUESTO
       }
     });
 
