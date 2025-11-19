@@ -642,49 +642,47 @@ app.post('/api/orders', async (req, res) => {
   }
 });
 
-// EMAIL RIEPILOGO quando ordine confermato
+
+
+// Al posto di nodemailer, usa Resend
+const { Resend } = require('resend');
+const resend = new Resend(process.env.RESEND_API_KEY);
+
 async function sendOrderConfirmationEmail(order) {
-  // Implementa con Nodemailer, SendGrid, o Resend
-  const nodemailer = require('nodemailer');
-  
-  const transporter = nodemailer.createTransport({
-    host: process.env.SMTP_HOST,
-    port: process.env.SMTP_PORT,
-    secure: true,
-    auth: {
-      user: process.env.SMTP_USER,
-      pass: process.env.SMTP_PASSWORD
-    }
-  });
+  try {
+    const itemsList = order.items.map(item => 
+      `${item.quantity}x ${item.product.name} - ${item.color} (${item.size}) = €${item.lineTotal.toFixed(2)}`
+    ).join('\n');
 
-  const itemsList = order.items.map(item => 
-    `${item.quantity}x ${item.product.name} - ${item.color} (${item.size}) = €${item.lineTotal.toFixed(2)}`
-  ).join('\n');
-
-  const emailHtml = `
-    <h2>Ordine Confermato! 🎉</h2>
-    <p>Ciao ${order.customerName},</p>
-    <p>Il tuo ordine <strong>#${order.orderNumber.toString().padStart(4, '0')}</strong> è stato confermato!</p>
+    await resend.emails.send({
+      from: 'CLASSE VENETA <noreply@classeveneta.com>',
+      to: order.customerEmail,
+      subject: `Ordine #${order.orderNumber.toString().padStart(4, '0')} Confermato`,
+      html: `
+        <h2>Ordine Confermato! 🎉</h2>
+        <p>Ciao ${order.customerName},</p>
+        <p>Il tuo ordine <strong>#${order.orderNumber.toString().padStart(4, '0')}</strong> è stato confermato!</p>
+        
+        <h3>Dettagli:</h3>
+        <pre>${itemsList}</pre>
+        
+        <p><strong>Subtotale:</strong> €${order.subtotal.toFixed(2)}</p>
+        ${order.discount > 0 ? `<p><strong>Sconto Bundle:</strong> -€${order.discount.toFixed(2)}</p>` : ''}
+        ${order.promoDiscount > 0 ? `<p><strong>Codice Promo (${order.promoCode}):</strong> -€${order.promoDiscount.toFixed(2)}</p>` : ''}
+        <p><strong>TOTALE:</strong> €${order.total.toFixed(2)}</p>
+        
+        <p>Riceverai la tua felpa entro 3 settimane!</p>
+        <p>Grazie per il tuo ordine,<br>CLASSE VENETA</p>
+      `
+    });
     
-    <h3>Dettagli:</h3>
-    <pre>${itemsList}</pre>
-    
-    <p><strong>Subtotale:</strong> €${order.subtotal.toFixed(2)}</p>
-    ${order.discount > 0 ? `<p><strong>Sconto Bundle:</strong> -€${order.discount.toFixed(2)}</p>` : ''}
-    ${order.promoDiscount > 0 ? `<p><strong>Codice Promo (${order.promoCode}):</strong> -€${order.promoDiscount.toFixed(2)}</p>` : ''}
-    <p><strong>TOTALE:</strong> €${order.total.toFixed(2)}</p>
-    
-    <p>Riceverai la tua felpa entro 3 settimane!</p>
-    <p>Grazie per il tuo ordine,<br>CLASSE VENETA</p>
-  `;
-
-  await transporter.sendMail({
-    from: process.env.SMTP_FROM,
-    to: order.customerEmail,
-    subject: `Ordine CLASSE VENETA #${order.orderNumber.toString().padStart(4, '0')} Confermato`,
-    html: emailHtml
-  });
+    console.log(`✅ Email sent to ${order.customerEmail}`);
+  } catch (error) {
+    console.error('❌ Email failed:', error);
+    throw error;
+  }
 }
+
 
 // AGGIORNA PUT /api/admin/orders/:id per mandare email
 app.put('/api/admin/orders/:id', adminAuth, async (req, res) => {
