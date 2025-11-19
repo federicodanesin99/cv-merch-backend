@@ -419,6 +419,313 @@ app.delete('/api/admin/products/:id', adminAuth, async (req, res) => {
   }
 });
 
+// POST Valida codice promozionale
+app.post('/api/validate-promo', async (req, res) => {
+  try {
+    const { code, customerEmail, subtotal } = req.body;
+
+    if (!code || !customerEmail || !subtotal) {
+      return res.status(400).json({ error: 'Dati mancanti' });
+    }
+
+    // Cerca codice
+    const promoCode = await prisma.promoCode.findUnique({
+      where: { code: code.toUpperCase().trim() },
+      include: {
+        usedBy: {
+          where: { customerEmail }
+        }
+      }
+    });
+
+    // Validazioni
+    if (!promoCode) {
+      return res.status(404).json({ error: 'Codice non valido' });
+    }
+
+    if (!promoCode.isActive) {
+      return res.status(400).json({ error: 'Codice non più attivo' });
+    }
+
+    if (promoCode.expiresAt && new Date(promoCode.expiresAt) < new Date()) {
+      return res.status(400).json({ error: 'Codice scaduto' });
+    }
+
+    // Check se già usato da questa email
+    if (promoCode.usedBy.length >= promoCode.maxUsesPerUser) {
+      return res.status(400).json({ error: 'Codice già utilizzato' });
+    }
+
+    // Calcola sconto
+    let discount = 0;
+    if (promoCode.discountType === 'PERCENTAGE') {
+      discount = subtotal * (promoCode.discountValue / 100);
+    } else {
+      discount = promoCode.discountValue;
+    }
+
+    // Non può superare il subtotal
+    discount = Math.min(discount, subtotal);
+
+    res.json({
+      valid: true,
+      code: promoCode.code,
+      discountType: promoCode.discountType,
+      discountValue: promoCode.discountValue,
+      discount: parseFloat(discount.toFixed(2)),
+      message: promoCode.discountType === 'PERCENTAGE' 
+        ? `Sconto ${promoCode.discountValue}% applicato!`
+        : `Sconto €${promoCode.discountValue} applicato!`
+    });
+
+  } catch (error) {
+    console.error('Error validating promo:', error);
+    res.status(500).json({ error: 'Errore nella validazione' });
+  }
+});
+
+// ADMIN - CRUD Promo Codes
+app.get('/api/admin/promo-codes', adminAuth, async (req, res) => {
+  try {
+    const codes = await prisma.promoCode.findMany({
+      include: {
+        _count: {
+          select: { usedBy: true }
+        }
+      },
+      orderBy: { createdAt: 'desc' }
+    });
+    res.json(codes);
+  } catch (error) {
+    console.error('Error fetching promo codes:', error);
+    res.status(500).json({ error: 'Errore nel recupero codici' });
+  }
+});
+
+app.post('/api/admin/promo-codes', adminAuth, async (req, res) => {
+  try {
+    const { code, discountType, discountValue, expiresAt, maxUsesPerUser, isActive } = req.body;
+
+    if (!code || !discountType || discountValue === undefined) {
+      return res.status(400).json({ error: 'Dati incompleti' });
+    }
+
+    const promoCode = await prisma.promoCode.create({
+      data: {
+        code: code.toUpperCase().trim(),
+        discountType,
+        discountValue: parseFloat(discountValue),
+        expiresAt: expiresAt ? new Date(expiresAt) : null,
+        maxUsesPerUser: maxUsesPerUser || 1,
+        isActive: isActive !== undefined ? isActive : true
+      }
+    });
+
+    res.json(promoCode);
+  } catch (error) {
+    console.error('Error creating promo code:', error);
+    if (error.code === 'P2002') {
+      res.status(400).json({ error: 'Codice già esistente' });
+    } else {
+      res.status(500).json({ error: 'Errore nella creazione' });
+    }
+  }
+});
+
+app.put('/api/admin/promo-codes/:id', adminAuth, async (req, res) => {
+  try {
+    const { discountValue, expiresAt, maxUsesPerUser, isActive } = req.body;
+
+    const promoCode = await prisma.promoCode.update({
+      where: { id: req.params.id },
+      data: {
+        ...(discountValue !== undefined && { discountValue: parseFloat(discountValue) }),
+        ...(expiresAt !== undefined && { expiresAt: expiresAt ? new Date(expiresAt) : null }),
+        ...(maxUsesPerUser !== undefined && { maxUsesPerUser }),
+        ...(isActive !== undefined && { isActive })
+      }
+    });
+
+    res.json(promoCode);
+  } catch (error) {
+    console.error('Error updating promo code:', error);
+    res.status(500).json({ error: 'Errore nell\'aggiornamento' });
+  }
+});
+
+app.delete('/api/admin/promo-codes/:id', adminAuth, async (req, res) => {
+  try {
+    await prisma.promoCode.delete({
+      where: { id: req.params.id }
+    });
+    res.json({ success: true });
+  } catch (error) {
+    console.error('Error deleting promo code:', error);
+    res.status(500).json({ error: 'Errore nell\'eliminazione' });
+  }
+});
+
+// AGGIORNA POST /api/orders per includere promo
+app.post('/api/orders', async (req, res) => {
+  try {
+    const { customerEmail, customerName, customerPhone, items, paymentMethod, promoCode } = req.body;
+
+    if (!customerEmail || !items || items.length === 0) {
+      return res.status(400).json({ error: 'Dati ordine incompleti' });
+    }
+
+    // ... calcolo subtotal e bundle discount (codice esistente)
+
+    // 🆕 Applica codice promo se presente
+    let promoDiscount = 0;
+    if (promoCode) {
+      const promo = await prisma.promoCode.findUnique({
+        where: { code: promoCode.toUpperCase().trim() }
+      });
+
+      if (promo && promo.isActive) {
+        const afterBundleTotal = subtotal - discount;
+        
+        if (promo.discountType === 'PERCENTAGE') {
+          promoDiscount = afterBundleTotal * (promo.discountValue / 100);
+        } else {
+          promoDiscount = promo.discountValue;
+        }
+
+        promoDiscount = Math.min(promoDiscount, afterBundleTotal);
+
+        // Registra utilizzo
+        await prisma.promoCodeUsage.create({
+          data: {
+            promoCodeId: promo.id,
+            customerEmail
+          }
+        });
+      }
+    }
+
+    const total = subtotal - discount - promoDiscount;
+
+    // Crea ordine
+    const order = await prisma.order.create({
+      data: {
+        customerEmail,
+        customerName,
+        customerPhone, // 🆕
+        subtotal,
+        discount,
+        promoCode: promoCode || null, // 🆕
+        promoDiscount, // 🆕
+        total,
+        paymentMethod: paymentMethod || 'paypal',
+        items: {
+          create: orderItems
+        }
+      },
+      include: {
+        items: {
+          include: { product: true }
+        }
+      }
+    });
+
+    res.json({
+      orderId: order.id,
+      orderNumber: order.orderNumber,
+      total: order.total,
+      paymentUrl: generatePaymentUrl(order)
+    });
+
+  } catch (error) {
+    console.error('Error creating order:', error);
+    res.status(500).json({ error: 'Errore nella creazione dell\'ordine' });
+  }
+});
+
+// EMAIL RIEPILOGO quando ordine confermato
+async function sendOrderConfirmationEmail(order) {
+  // Implementa con Nodemailer, SendGrid, o Resend
+  const nodemailer = require('nodemailer');
+  
+  const transporter = nodemailer.createTransport({
+    host: process.env.SMTP_HOST,
+    port: process.env.SMTP_PORT,
+    secure: true,
+    auth: {
+      user: process.env.SMTP_USER,
+      pass: process.env.SMTP_PASSWORD
+    }
+  });
+
+  const itemsList = order.items.map(item => 
+    `${item.quantity}x ${item.product.name} - ${item.color} (${item.size}) = €${item.lineTotal.toFixed(2)}`
+  ).join('\n');
+
+  const emailHtml = `
+    <h2>Ordine Confermato! 🎉</h2>
+    <p>Ciao ${order.customerName},</p>
+    <p>Il tuo ordine <strong>#${order.orderNumber.toString().padStart(4, '0')}</strong> è stato confermato!</p>
+    
+    <h3>Dettagli:</h3>
+    <pre>${itemsList}</pre>
+    
+    <p><strong>Subtotale:</strong> €${order.subtotal.toFixed(2)}</p>
+    ${order.discount > 0 ? `<p><strong>Sconto Bundle:</strong> -€${order.discount.toFixed(2)}</p>` : ''}
+    ${order.promoDiscount > 0 ? `<p><strong>Codice Promo (${order.promoCode}):</strong> -€${order.promoDiscount.toFixed(2)}</p>` : ''}
+    <p><strong>TOTALE:</strong> €${order.total.toFixed(2)}</p>
+    
+    <p>Riceverai la tua felpa entro 3 settimane!</p>
+    <p>Grazie per il tuo ordine,<br>CLASSE VENETA</p>
+  `;
+
+  await transporter.sendMail({
+    from: process.env.SMTP_FROM,
+    to: order.customerEmail,
+    subject: `Ordine CLASSE VENETA #${order.orderNumber.toString().padStart(4, '0')} Confermato`,
+    html: emailHtml
+  });
+}
+
+// AGGIORNA PUT /api/admin/orders/:id per mandare email
+app.put('/api/admin/orders/:id', adminAuth, async (req, res) => {
+  try {
+    const { paymentStatus, paymentId, notes } = req.body;
+
+    const order = await prisma.order.update({
+      where: { id: req.params.id },
+      data: {
+        paymentStatus,
+        paymentId,
+        notes,
+        paidAt: paymentStatus === 'PAID' ? new Date() : undefined
+      },
+      include: {
+        items: {
+          include: { product: true }
+        }
+      }
+    });
+
+    // 🆕 Invia email se ordine confermato
+    if (paymentStatus === 'PAID' && order.customerEmail) {
+      try {
+        await sendOrderConfirmationEmail(order);
+        console.log(`✅ Email sent to ${order.customerEmail}`);
+      } catch (emailError) {
+        console.error('❌ Email send failed:', emailError);
+        // Non bloccare la response se email fallisce
+      }
+    }
+
+    res.json(order);
+  } catch (error) {
+    console.error('Error updating order:', error);
+    res.status(500).json({ error: 'Errore nell\'aggiornamento ordine' });
+  }
+});
+
+
+
 // ==================================
 // HELPERS
 // ==================================

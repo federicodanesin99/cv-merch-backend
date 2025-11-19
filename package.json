@@ -6,7 +6,8 @@
   "scripts": {
     "start": "node server.js",
     "dev": "node server.js",
-    "seed": "node prisma/seed.js"
+    "seed": "node prisma/seed.js",
+    "parse": "node gmail-parser.js"
   },
   "keywords": [],
   "author": "",
@@ -17,7 +18,8 @@
     "cors": "^2.8.5",
     "dotenv": "^17.2.3",
     "express": "^5.1.0",
-    "googleapis": "^166.0.0"
+    "googleapis": "^166.0.0",
+    "nodemailer": "^7.0.10"
   },
   "devDependencies": {
     "prisma": "^6.19.0"

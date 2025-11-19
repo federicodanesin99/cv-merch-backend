@@ -21,28 +21,64 @@ datasource db {
 // ====================================
 model Product {
   id          String   @id @default(uuid())
-  name        String   // "Hoody" o "Girocollo"
-  slug        String   @unique // "hoody", "girocollo"
-  basePrice   Float    // Prezzo normale (es. 49.00)
-  launchPrice Float?   // Prezzo lancio (es. 39.00), null se non in promo
+  name        String
+  slug        String   @unique
+  description String?  
+  sizeGuide   String?  
+  basePrice   Float
+  launchPrice Float?
   isActive    Boolean  @default(true)
   
-  // Attributi dinamici (JSON per flessibilità)
-  colors      Json     // ["Military Green", "Blue Navy", ...]
-  sizes       Json     // ["S", "M", "L", "XL", "XXL"]
-
-  // 🆕 SOSTITUISCI imageUrl con images
-  images      Json?    // [{ color: "Military Green", urls: ["url1", "url2"] }, ...]
+  colors      Json
+  sizes       Json
+  images      Json?
   
-  // Inventario (opzionale, per futuro)
   hasInventory Boolean @default(false)
-  
   orderItems  OrderItem[]
   
   createdAt   DateTime @default(now())
   updatedAt   DateTime @updatedAt
   
   @@index([slug])
+}
+
+
+// 🆕 MODEL CODICI PROMOZIONALI
+model PromoCode {
+  id          String   @id @default(uuid())
+  code        String   @unique // "PROMO10", "SCONTO5"
+  
+  discountType String  // "PERCENTAGE" o "FIXED"
+  discountValue Float  // 10 (per 10%) o 5 (per €5)
+  
+  // Limiti e validità
+  expiresAt   DateTime?
+  maxUsesPerUser Int   @default(1) // Max 1 volta per email
+  isActive    Boolean  @default(true)
+  
+  // Tracking utilizzi
+  usedBy      PromoCodeUsage[]
+  
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+  
+  @@index([code])
+}
+
+// 🆕 TRACKING USO CODICI (per limitare 1 per email)
+model PromoCodeUsage {
+  id          String   @id @default(uuid())
+  
+  promoCode   PromoCode @relation(fields: [promoCodeId], references: [id], onDelete: Cascade)
+  promoCodeId String
+  
+  customerEmail String
+  orderId     String?
+  
+  usedAt      DateTime @default(now())
+  
+  @@unique([promoCodeId, customerEmail]) // 1 codice = 1 volta per email
+  @@index([customerEmail])
 }
 
 // ====================================
@@ -56,6 +92,10 @@ model Order {
   customerEmail   String
   customerName    String?
   customerPhone   String?
+
+  // Codice promo usato
+  promoCode       String?  // es: "PROMO10"
+  promoDiscount   Float    @default(0) // Sconto applicato dal codice
   
   // Calcoli
   subtotal        Float       // Totale prodotti
