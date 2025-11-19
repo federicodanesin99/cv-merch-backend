@@ -6,8 +6,8 @@ WORKDIR /app
 COPY package*.json ./
 COPY prisma ./prisma/
 
-# Install dependencies
-RUN npm ci --only=production
+# Install dependencies + PM2
+RUN npm ci --only=production && npm install -g pm2
 
 # Generate Prisma Client
 RUN npx prisma generate
@@ -18,5 +18,5 @@ COPY . .
 # Expose port
 EXPOSE 8080
 
-# Start app
-CMD ["node", "server.js"]
+# Start with PM2
+CMD ["pm2-runtime", "start", "ecosystem.config.js"]
