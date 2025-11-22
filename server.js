@@ -43,13 +43,12 @@ app.get('/api/products', async (req, res) => {
       orderBy: { name: 'asc' }
     });
 
-    // Ottieni configurazione sconti
-    const bundleConfig = await prisma.config.findUnique({
-      where: { key: 'bundle_discount' }
-    });
-
     const launchActive = await prisma.config.findUnique({
       where: { key: 'launch_prices_active' }
+    });
+
+    const bundleConfig = await prisma.config.findUnique({
+      where: { key: 'bundle_discount' }
     });
 
     res.json({
@@ -57,9 +56,13 @@ app.get('/api/products', async (req, res) => {
         id: p.id,
         name: p.name,
         slug: p.slug,
-        price: launchActive?.value?.active ? p.launchPrice : p.basePrice,
+        description: p.description, // 🆕
+        sizeGuide: p.sizeGuide, // 🆕
+        basePrice: p.basePrice, // 🆕 Sempre invia basePrice
+        price: launchActive?.value?.active && p.launchPrice ? p.launchPrice : p.basePrice, // Prezzo corrente
         colors: p.colors,
-        sizes: p.sizes
+        sizes: p.sizes,
+        images: p.images || []
       })),
       bundleDiscount: bundleConfig?.value?.percentage || 5,
       launchActive: launchActive?.value?.active || false
