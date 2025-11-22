@@ -135,6 +135,8 @@ app.post('/api/orders', async (req, res) => {
 
     const total = subtotal - discount;
 
+    
+
     // Crea ordine
     const order = await prisma.order.create({
       data: {
@@ -154,6 +156,8 @@ app.post('/api/orders', async (req, res) => {
         }
       }
     });
+
+    console.log('totale ordine : ', total);
 
     res.json({
       orderId: order.id,
@@ -646,7 +650,7 @@ app.post('/api/orders', async (req, res) => {
 
     // ... calcolo subtotal e bundle discount (codice esistente)
 
-    // 🆕 Applica codice promo se presente
+    // Applica codice promo se presente
     let promoDiscount = 0;
     if (promoCode) {
       const promo = await prisma.promoCode.findUnique({
