@@ -308,35 +308,6 @@ app.put('/api/admin/config', adminAuth, async (req, res) => {
   }
 });
 
-// GET analytics
-app.get('/api/admin/analytics', adminAuth, async (req, res) => {
-  try {
-    const totalOrders = await prisma.order.count();
-    const paidOrders = await prisma.order.count({ where: { paymentStatus: 'PAID' } });
-    const revenue = await prisma.order.aggregate({
-      where: { paymentStatus: 'PAID' },
-      _sum: { total: true }
-    });
-
-    const topProducts = await prisma.orderItem.groupBy({
-      by: ['productId'],
-      _sum: { quantity: true },
-      orderBy: { _sum: { quantity: 'desc' } },
-      take: 5
-    });
-
-    res.json({
-      totalOrders,
-      paidOrders,
-      revenue: revenue._sum.total || 0,
-      topProducts
-    });
-  } catch (error) {
-    console.error('Error fetching analytics:', error);
-    res.status(500).json({ error: 'Errore nel recupero analytics' });
-  }
-});
-
 // ====================================
 // ADMIN API - GESTIONE PRODOTTI
 // ====================================
