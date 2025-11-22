@@ -419,6 +419,102 @@ app.delete('/api/admin/products/:id', adminAuth, async (req, res) => {
   }
 });
 
+// 🆕 DELETE cancella ordine (admin)
+app.delete('/api/admin/orders/:id', adminAuth, async (req, res) => {
+  try {
+    await prisma.order.delete({
+      where: { id: req.params.id }
+    });
+    res.json({ success: true });
+  } catch (error) {
+    console.error('Error deleting order:', error);
+    res.status(500).json({ error: 'Errore nell\'eliminazione ordine' });
+  }
+});
+
+//GET ordini con ricerca
+app.get('/api/admin/orders', adminAuth, async (req, res) => {
+  try {
+    const { status, page = 1, limit = 20, search } = req.query;
+    
+    const where = {};
+    
+    if (status) {
+      where.paymentStatus = status;
+    }
+    
+    // 🆕 Ricerca per email o nome
+    if (search) {
+      where.OR = [
+        { customerEmail: { contains: search, mode: 'insensitive' } },
+        { customerName: { contains: search, mode: 'insensitive' } }
+      ];
+    }
+    
+    const orders = await prisma.order.findMany({
+      where,
+      include: {
+        items: {
+          include: { product: true }
+        }
+      },
+      orderBy: { createdAt: 'desc' },
+      skip: (page - 1) * limit,
+      take: parseInt(limit)
+    });
+
+    const total = await prisma.order.count({ where });
+
+    res.json({
+      orders,
+      pagination: {
+        page: parseInt(page),
+        limit: parseInt(limit),
+        total,
+        pages: Math.ceil(total / limit)
+      }
+    });
+  } catch (error) {
+    console.error('Error fetching orders:', error);
+    res.status(500).json({ error: 'Errore nel recupero ordini' });
+  }
+});
+
+// AGGIORNA Analytics per includere delivered
+app.get('/api/admin/analytics', adminAuth, async (req, res) => {
+  try {
+    const totalOrders = await prisma.order.count();
+    const paidOrders = await prisma.order.count({ where: { paymentStatus: 'PAID' } });
+    const deliveredOrders = await prisma.order.count({ where: { paymentStatus: 'DELIVERED' } });
+    
+    const revenue = await prisma.order.aggregate({
+      where: { 
+        paymentStatus: { in: ['PAID', 'DELIVERED'] }
+      },
+      _sum: { total: true }
+    });
+
+    const topProducts = await prisma.orderItem.groupBy({
+      by: ['productId'],
+      _sum: { quantity: true },
+      orderBy: { _sum: { quantity: 'desc' } },
+      take: 5
+    });
+
+    res.json({
+      totalOrders,
+      paidOrders,
+      deliveredOrders, // 🆕
+      revenue: revenue._sum.total || 0,
+      topProducts
+    });
+  } catch (error) {
+    console.error('Error fetching analytics:', error);
+    res.status(500).json({ error: 'Errore nel recupero analytics' });
+  }
+});
+
+
 // POST Valida codice promozionale
 app.post('/api/validate-promo', async (req, res) => {
   try {
