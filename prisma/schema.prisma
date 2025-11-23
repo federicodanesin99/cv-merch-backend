@@ -89,6 +89,9 @@ model Order {
   id              String      @id @default(uuid())
   orderNumber     Int         @unique @default(autoincrement()) // #0001, #0002, etc.
   uniqueCode      String      @unique  // Codice univoco tipo MIDA-0001-A3F7
+
+  batchId         String?
+  batch           Batch?   @relation(fields: [batchId], references: [id])
   
   // Dati cliente
   customerEmail   String
@@ -130,6 +133,30 @@ enum PaymentStatus {
   FAILED       // Pagamento fallito
   REFUNDED     // Rimborsato
 }
+// ====================================
+// LOTTO
+// ====================================
+
+model Batch {
+  id              String    @id @default(cuid())
+  batchNumber     Int       @unique @default(autoincrement())
+  createdAt       DateTime  @default(now())
+  orderedAt       DateTime? // Quando inviato al fornitore
+  receivedAt      DateTime? // Quando ricevuto dal fornitore
+  status          String    @default("DRAFT") // DRAFT, ORDERED, RECEIVED
+  
+  // Info fornitore
+  supplierName    String?
+  supplierOrderId String?
+  supplierCost    Float?
+  expectedDelivery DateTime?
+  notes           String?
+  
+  orders          Order[]
+  
+  @@map("batches")
+}
+
 
 // ====================================
 // RIGHE ORDINE

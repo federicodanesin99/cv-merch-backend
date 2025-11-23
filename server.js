@@ -169,6 +169,26 @@ app.put('/api/admin/orders/:id', adminAuth, async (req, res) => {
   try {
     const { paymentStatus, paymentId, notes } = req.body;
 
+    // 🆕 VALIDAZIONE: Impedisci salti di stato non validi
+    if (paymentStatus) {
+      const currentOrder = await prisma.order.findUnique({
+        where: { id: req.params.id }
+      });
+
+      const invalidTransitions = {
+        'PENDING': ['ORDERED', 'DELIVERED'], // PENDING può andare solo a PAID o FAILED
+        'PAID': ['DELIVERED'], // PAID può andare solo a ORDERED
+        'ORDERED': ['PAID', 'PENDING'], // ORDERED può andare solo a DELIVERED
+        'DELIVERED': ['PENDING', 'PAID', 'ORDERED'] // DELIVERED è finale
+      };
+
+      if (invalidTransitions[currentOrder.paymentStatus]?.includes(paymentStatus)) {
+        return res.status(400).json({ 
+          error: `Transizione non valida: ${currentOrder.paymentStatus} → ${paymentStatus}` 
+        });
+      }
+    }
+
     const order = await prisma.order.update({
       where: { id: req.params.id },
       data: {
@@ -184,14 +204,13 @@ app.put('/api/admin/orders/:id', adminAuth, async (req, res) => {
       }
     });
 
-    // 🆕 Invia email se ordine confermato
+    // Invia email se ordine confermato (solo PAID, non più per altri stati)
     if (paymentStatus === 'PAID' && order.customerEmail) {
       try {
         await sendOrderConfirmationEmail(order);
         console.log(`✅ Email sent to ${order.customerEmail}`);
       } catch (emailError) {
         console.error('❌ Email send failed:', emailError);
-        // Non bloccare la response se email fallisce
       }
     }
 
@@ -736,6 +755,240 @@ app.delete('/api/admin/promo-codes/:id', adminAuth, async (req, res) => {
     res.status(500).json({ error: 'Errore nell\'eliminazione' });
   }
 });
+
+
+// ==================================
+// BATCH API - Gestione Lotti
+// ==================================
+
+// GET riepilogo ordini PAID (da ordinare)
+app.get('/api/admin/orders/summary-to-order', adminAuth, async (req, res) => {
+  try {
+    const paidOrders = await prisma.order.findMany({
+      where: {
+        paymentStatus: 'PAID',
+        batchId: null // Solo ordini non ancora in un lotto
+      },
+      include: {
+        items: {
+          include: { product: true }
+        }
+      },
+      orderBy: { paidAt: 'asc' }
+    });
+
+    // Aggrega per prodotto → colore → taglia
+    const summary = {};
+    
+    paidOrders.forEach(order => {
+      order.items.forEach(item => {
+        const productKey = item.product.name;
+        
+        if (!summary[productKey]) {
+          summary[productKey] = {
+            productName: item.product.name,
+            total: 0,
+            byColor: {}
+          };
+        }
+        
+        const color = item.color;
+        if (!summary[productKey].byColor[color]) {
+          summary[productKey].byColor[color] = {
+            total: 0,
+            bySize: {}
+          };
+        }
+        
+        const size = item.size;
+        if (!summary[productKey].byColor[color].bySize[size]) {
+          summary[productKey].byColor[color].bySize[size] = 0;
+        }
+        
+        summary[productKey].byColor[color].bySize[size] += item.quantity;
+        summary[productKey].byColor[color].total += item.quantity;
+        summary[productKey].total += item.quantity;
+      });
+    });
+
+    res.json({
+      orders: paidOrders,
+      summary: Object.values(summary),
+      totalOrders: paidOrders.length,
+      totalItems: paidOrders.reduce((sum, o) => sum + o.items.reduce((s, i) => s + i.quantity, 0), 0)
+    });
+  } catch (error) {
+    console.error('Error fetching summary:', error);
+    res.status(500).json({ error: 'Errore nel recupero riepilogo' });
+  }
+});
+
+// POST crea nuovo lotto
+app.post('/api/admin/batches', adminAuth, async (req, res) => {
+  try {
+    const { orderIds, supplierName, supplierCost, expectedDelivery, notes } = req.body;
+
+    if (!orderIds || orderIds.length === 0) {
+      return res.status(400).json({ error: 'Nessun ordine selezionato' });
+    }
+
+    // Crea il lotto
+    const batch = await prisma.batch.create({
+      data: {
+        status: 'DRAFT',
+        supplierName,
+        supplierCost: supplierCost ? parseFloat(supplierCost) : null,
+        expectedDelivery: expectedDelivery ? new Date(expectedDelivery) : null,
+        notes
+      }
+    });
+
+    // Aggiorna ordini
+    await prisma.order.updateMany({
+      where: { id: { in: orderIds } },
+      data: {
+        batchId: batch.id,
+        paymentStatus: 'ORDERED'
+      }
+    });
+
+    res.json(batch);
+  } catch (error) {
+    console.error('Error creating batch:', error);
+    res.status(500).json({ error: 'Errore nella creazione lotto' });
+  }
+});
+
+// GET lista lotti
+app.get('/api/admin/batches', adminAuth, async (req, res) => {
+  try {
+    const batches = await prisma.batch.findMany({
+      include: {
+        orders: {
+          include: {
+            items: {
+              include: { product: true }
+            }
+          }
+        }
+      },
+      orderBy: { createdAt: 'desc' }
+    });
+
+    res.json(batches);
+  } catch (error) {
+    console.error('Error fetching batches:', error);
+    res.status(500).json({ error: 'Errore nel recupero lotti' });
+  }
+});
+
+// PUT aggiorna lotto
+app.put('/api/admin/batches/:id', adminAuth, async (req, res) => {
+  try {
+    const { status, supplierName, supplierOrderId, supplierCost, expectedDelivery, receivedAt, notes } = req.body;
+
+    const batch = await prisma.batch.update({
+      where: { id: req.params.id },
+      data: {
+        ...(status && { status }),
+        ...(supplierName !== undefined && { supplierName }),
+        ...(supplierOrderId !== undefined && { supplierOrderId }),
+        ...(supplierCost !== undefined && { supplierCost: parseFloat(supplierCost) }),
+        ...(expectedDelivery !== undefined && { expectedDelivery: expectedDelivery ? new Date(expectedDelivery) : null }),
+        ...(receivedAt !== undefined && { receivedAt: receivedAt ? new Date(receivedAt) : null }),
+        ...(notes !== undefined && { notes }),
+        ...(status === 'ORDERED' && !req.body.orderedAt && { orderedAt: new Date() })
+      }
+    });
+
+    res.json(batch);
+  } catch (error) {
+    console.error('Error updating batch:', error);
+    res.status(500).json({ error: 'Errore nell\'aggiornamento lotto' });
+  }
+});
+
+
+// ==================================
+// PRODUCT STATS API
+// ==================================
+
+app.get('/api/admin/products/stats', adminAuth, async (req, res) => {
+  try {
+    const { startDate, endDate } = req.query;
+    
+    const where = {
+      paymentStatus: { in: ['PAID', 'ORDERED', 'DELIVERED'] }
+    };
+    
+    if (startDate && endDate) {
+      where.createdAt = {
+        gte: new Date(startDate),
+        lte: new Date(endDate)
+      };
+    }
+
+    const orders = await prisma.order.findMany({
+      where,
+      include: {
+        items: {
+          include: { product: true }
+        }
+      }
+    });
+
+    // Aggrega statistiche
+    const stats = {};
+    
+    orders.forEach(order => {
+      order.items.forEach(item => {
+        const productId = item.product.id;
+        
+        if (!stats[productId]) {
+          stats[productId] = {
+            product: item.product,
+            totalQuantity: 0,
+            byColor: {},
+            bySize: {},
+            combinations: {}
+          };
+        }
+        
+        stats[productId].totalQuantity += item.quantity;
+        
+        // Per colore
+        if (!stats[productId].byColor[item.color]) {
+          stats[productId].byColor[item.color] = 0;
+        }
+        stats[productId].byColor[item.color] += item.quantity;
+        
+        // Per taglia
+        if (!stats[productId].bySize[item.size]) {
+          stats[productId].bySize[item.size] = 0;
+        }
+        stats[productId].bySize[item.size] += item.quantity;
+        
+        // Combinazioni
+        const combo = `${item.color}-${item.size}`;
+        if (!stats[productId].combinations[combo]) {
+          stats[productId].combinations[combo] = {
+            color: item.color,
+            size: item.size,
+            quantity: 0
+          };
+        }
+        stats[productId].combinations[combo].quantity += item.quantity;
+      });
+    });
+
+    res.json(Object.values(stats));
+  } catch (error) {
+    console.error('Error fetching product stats:', error);
+    res.status(500).json({ error: 'Errore nel recupero statistiche' });
+  }
+});
+
+
 
 // Al posto di nodemailer, usa Resend
 const { Resend } = require('resend');
