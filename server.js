@@ -176,8 +176,24 @@ app.put('/api/admin/orders/:id', adminAuth, async (req, res) => {
         paymentId,
         notes,
         paidAt: paymentStatus === 'PAID' ? new Date() : undefined
+      },
+      include: {
+        items: {
+          include: { product: true }
+        }
       }
     });
+
+    // 🆕 Invia email se ordine confermato
+    if (paymentStatus === 'PAID' && order.customerEmail) {
+      try {
+        await sendOrderConfirmationEmail(order);
+        console.log(`✅ Email sent to ${order.customerEmail}`);
+      } catch (emailError) {
+        console.error('❌ Email send failed:', emailError);
+        // Non bloccare la response se email fallisce
+      }
+    }
 
     res.json(order);
   } catch (error) {
@@ -718,47 +734,6 @@ async function sendOrderConfirmationEmail(order) {
     throw error;
   }
 }
-
-
-// AGGIORNA PUT /api/admin/orders/:id per mandare email
-app.put('/api/admin/orders/:id', adminAuth, async (req, res) => {
-  try {
-    const { paymentStatus, paymentId, notes } = req.body;
-
-    const order = await prisma.order.update({
-      where: { id: req.params.id },
-      data: {
-        paymentStatus,
-        paymentId,
-        notes,
-        paidAt: paymentStatus === 'PAID' ? new Date() : undefined
-      },
-      include: {
-        items: {
-          include: { product: true }
-        }
-      }
-    });
-
-    // 🆕 Invia email se ordine confermato
-    if (paymentStatus === 'PAID' && order.customerEmail) {
-      try {
-        await sendOrderConfirmationEmail(order);
-        console.log(`✅ Email sent to ${order.customerEmail}`);
-      } catch (emailError) {
-        console.error('❌ Email send failed:', emailError);
-        // Non bloccare la response se email fallisce
-      }
-    }
-
-    res.json(order);
-  } catch (error) {
-    console.error('Error updating order:', error);
-    res.status(500).json({ error: 'Errore nell\'aggiornamento ordine' });
-  }
-});
-
-
 
 // ==================================
 // HELPERS
