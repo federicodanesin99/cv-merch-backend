@@ -525,13 +525,47 @@ app.get('/api/admin/analytics', adminAuth, async (req, res) => {
       orderBy: { _sum: { quantity: 'desc' } },
       take: 5
     });
+    // 🆕 Analytics per metodo di pagamento
+    const paypalOrders = await prisma.order.count({
+      where: { 
+        paymentMethod: 'paypal',
+        paymentStatus: { in: ['PAID', 'DELIVERED'] }
+      }
+    });
+
+    const revolutOrders = await prisma.order.count({
+      where: { 
+        paymentMethod: 'revolut',
+        paymentStatus: { in: ['PAID', 'DELIVERED'] }
+      }
+    });
+
+    const paypalRevenue = await prisma.order.aggregate({
+      where: { 
+        paymentMethod: 'paypal',
+        paymentStatus: { in: ['PAID', 'DELIVERED'] }
+      },
+      _sum: { total: true }
+    });
+
+    const revolutRevenue = await prisma.order.aggregate({
+      where: { 
+        paymentMethod: 'revolut',
+        paymentStatus: { in: ['PAID', 'DELIVERED'] }
+      },
+      _sum: { total: true }
+    });
 
     res.json({
       totalOrders,
       paidOrders,
       deliveredOrders, // 🆕
       revenue: revenue._sum.total || 0,
-      topProducts
+      topProducts,
+      paypalOrders,
+      revolutOrders,
+      paypalRevenue: paypalRevenue._sum.total || 0,
+      revolutRevenue: revolutRevenue._sum.total || 0
     });
   } catch (error) {
     console.error('Error fetching analytics:', error);
