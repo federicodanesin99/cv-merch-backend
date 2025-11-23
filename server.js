@@ -360,7 +360,7 @@ if (hasBundleDiscount) {
 // POST crea nuovo prodotto - AGGIORNA
 app.post('/api/admin/products', adminAuth, async (req, res) => {
   try {
-    const { name, slug, basePrice, launchPrice, colors, sizes, isActive, images } = req.body;
+    const { name, slug, basePrice, launchPrice, colors, sizes, isActive, images, description, sizeGuide } = req.body;
 
     if (!name || !slug || !basePrice) {
       return res.status(400).json({ error: 'Dati prodotto incompleti' });
@@ -370,12 +370,14 @@ app.post('/api/admin/products', adminAuth, async (req, res) => {
       data: {
         name,
         slug,
+        description: description || null,    // ✅ AGGIUNGI
+        sizeGuide: sizeGuide || null,        // ✅ AGGIUNGI
         basePrice: parseFloat(basePrice),
         launchPrice: launchPrice ? parseFloat(launchPrice) : null,
         colors: colors || [],
         sizes: sizes || ['S', 'M', 'L', 'XL', 'XXL'],
         isActive: isActive !== undefined ? isActive : true,
-        images: images || [] // 🆕 Array di oggetti { color, urls }
+        images: images || []
       }
     });
 
@@ -389,18 +391,20 @@ app.post('/api/admin/products', adminAuth, async (req, res) => {
 // PUT aggiorna prodotto - AGGIORNA
 app.put('/api/admin/products/:id', adminAuth, async (req, res) => {
   try {
-    const { name, basePrice, launchPrice, colors, sizes, isActive, images } = req.body;
+    const { name, basePrice, launchPrice, colors, sizes, isActive, images, description, sizeGuide } = req.body;
 
     const product = await prisma.product.update({
       where: { id: req.params.id },
       data: {
         ...(name && { name }),
+        ...(description !== undefined && { description }),      // ✅ AGGIUNGI
+        ...(sizeGuide !== undefined && { sizeGuide }),         // ✅ AGGIUNGI
         ...(basePrice !== undefined && { basePrice: parseFloat(basePrice) }),
         ...(launchPrice !== undefined && { launchPrice: launchPrice ? parseFloat(launchPrice) : null }),
         ...(colors && { colors }),
         ...(sizes && { sizes }),
         ...(isActive !== undefined && { isActive }),
-        ...(images !== undefined && { images }) // 🆕
+        ...(images !== undefined && { images })
       }
     });
 
