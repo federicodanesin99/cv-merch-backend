@@ -14,7 +14,7 @@ module.exports = {
       },
       {
         name: 'gmail-parser',
-        script: './gmail-parser.js',
+        script: './gmail-parser-oauth.js',
         instances: 1,
         autorestart: true,
         watch: false,
@@ -26,4 +26,3 @@ module.exports = {
       }
     ]
   };
-  

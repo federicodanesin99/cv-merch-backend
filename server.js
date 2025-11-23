@@ -777,10 +777,6 @@ async function sendOrderConfirmationEmail(order) {
 }
 
 // ==================================
-// HELPERS
-// ==================================
-
-// ==================================
 // HELPER: Genera Codice Univoco Ordine
 // ==================================
 function generateUniqueOrderCode(orderNumber) {
