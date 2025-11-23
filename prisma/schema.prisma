@@ -88,6 +88,7 @@ model PromoCodeUsage {
 model Order {
   id              String      @id @default(uuid())
   orderNumber     Int         @unique @default(autoincrement()) // #0001, #0002, etc.
+  uniqueCode    String   @unique  // 🆕 Codice univoco tipo MIDA-0001-A3F7
   
   // Dati cliente
   customerEmail   String

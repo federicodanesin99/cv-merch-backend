@@ -342,6 +342,7 @@ if (hasBundleDiscount) {
       data: {
         customerEmail,
         customerName,
+        uniqueCode: generateUniqueOrderCode(Date.now()),
         customerPhone, // 🆕
         subtotal,
         discount,
@@ -359,10 +360,16 @@ if (hasBundleDiscount) {
         }
       }
     });
+    const uniqueCode = generateUniqueOrderCode(order.orderNumber);
+    await prisma.order.update({
+      where: { id: order.id },
+      data: { uniqueCode }
+    });
 
     res.json({
       orderId: order.id,
       orderNumber: order.orderNumber,
+      uniqueCode: uniqueCode,
       total: order.total,
       paymentUrl: generatePaymentUrl(order)
     });
@@ -772,6 +779,25 @@ async function sendOrderConfirmationEmail(order) {
 // ==================================
 // HELPERS
 // ==================================
+
+// ==================================
+// HELPER: Genera Codice Univoco Ordine
+// ==================================
+function generateUniqueOrderCode(orderNumber) {
+  // Formato: MIDA-XXXX-YYYY
+  // XXXX = numero ordine (4 cifre)
+  // YYYY = hash alfanumerico (4 caratteri)
+  
+  const paddedNumber = orderNumber.toString().padStart(4, '0');
+  const chars = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789'; // Senza 0, O, I, 1 per evitare confusione
+  let hash = '';
+  
+  for (let i = 0; i < 4; i++) {
+    hash += chars.charAt(Math.floor(Math.random() * chars.length));
+  }
+  
+  return `CLA$$EV€N€TA-${paddedNumber}-${hash}`;
+}
 
 function generatePaymentUrl(order) {
   const amount = order.total.toFixed(2);
