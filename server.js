@@ -707,7 +707,7 @@ async function sendOrderConfirmationEmail(order) {
     ).join('\n');
 
     await resend.emails.send({
-      from: 'CLASSE VENETA <noreply@classeveneta.com>',
+      from: 'CLASSE VENETA <classeveneta@gmail.com>',
       to: order.customerEmail,
       subject: `Ordine #${order.orderNumber.toString().padStart(4, '0')} Confermato`,
       html: `
