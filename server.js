@@ -74,103 +74,6 @@ app.get('/api/products', async (req, res) => {
 });
 
 // POST nuovo ordine
-app.post('/api/orders', async (req, res) => {
-  try {
-    const { customerEmail, customerName, items, paymentMethod } = req.body;
-
-    // Validazione base
-    if (!customerEmail || !items || items.length === 0) {
-      return res.status(400).json({ error: 'Dati ordine incompleti' });
-    }
-
-    // Recupera prodotti per calcolare prezzi
-    const productIds = [...new Set(items.map(i => i.productId))];
-    const products = await prisma.product.findMany({
-      where: { id: { in: productIds } }
-    });
-
-    const productMap = Object.fromEntries(products.map(p => [p.id, p]));
-
-    // Check prezzi lancio attivi
-    const launchActive = await prisma.config.findUnique({
-      where: { key: 'launch_prices_active' }
-    });
-    const useLaunchPrices = launchActive?.value?.active || false;
-
-    // Calcola totale e applica bundle
-    let subtotal = 0;
-    const orderItems = items.map(item => {
-      const product = productMap[item.productId];
-      const unitPrice = useLaunchPrices && product.launchPrice 
-        ? product.launchPrice 
-        : product.basePrice;
-      const lineTotal = unitPrice * item.quantity;
-      subtotal += lineTotal;
-
-      return {
-        productId: item.productId,
-        color: item.color,
-        size: item.size,
-        quantity: item.quantity,
-        unitPrice,
-        lineTotal
-      };
-    });
-
-    // Applica sconto bundle (2+ felpe stessa taglia)
-    let discount = 0;
-    const sizeCounts = {};
-    orderItems.forEach(item => {
-      sizeCounts[item.size] = (sizeCounts[item.size] || 0) + item.quantity;
-    });
-
-    const hasBundleDiscount = Object.values(sizeCounts).some(count => count >= 2);
-    if (hasBundleDiscount) {
-      const bundleConfig = await prisma.config.findUnique({
-        where: { key: 'bundle_discount' }
-      });
-      const discountPercentage = bundleConfig?.value?.percentage || 5;
-      discount = subtotal * (discountPercentage / 100);
-    }
-
-    const total = subtotal - discount;
-
-    
-
-    // Crea ordine
-    const order = await prisma.order.create({
-      data: {
-        customerEmail,
-        customerName,
-        subtotal,
-        discount,
-        total,
-        paymentMethod: paymentMethod || 'paypal',
-        items: {
-          create: orderItems
-        }
-      },
-      include: {
-        items: {
-          include: { product: true }
-        }
-      }
-    });
-
-    console.log('totale ordine : ', total);
-
-    res.json({
-      orderId: order.id,
-      orderNumber: order.orderNumber,
-      total: order.total,
-      paymentUrl: generatePaymentUrl(order)
-    });
-
-  } catch (error) {
-    console.error('Error creating order:', error);
-    res.status(500).json({ error: 'Errore nella creazione dell\'ordine' });
-  }
-});
 
 // GET dettaglio ordine
 app.get('/api/orders/:id', async (req, res) => {
@@ -330,6 +233,130 @@ app.get('/api/admin/products', adminAuth, async (req, res) => {
 });
 
 // POST crea nuovo prodotto
+app.post('/api/orders', async (req, res) => {
+  try {
+    const { customerEmail, customerName, customerPhone, items, paymentMethod, promoCode } = req.body;
+
+    if (!customerEmail || !items || items.length === 0) {
+      return res.status(400).json({ error: 'Dati ordine incompleti' });
+    }
+
+    // Recupera prodotti per calcolare prezzi
+const productIds = [...new Set(items.map(i => i.productId))];
+const products = await prisma.product.findMany({
+  where: { id: { in: productIds } }
+});
+
+const productMap = Object.fromEntries(products.map(p => [p.id, p]));
+
+// Check prezzi lancio attivi
+const launchActive = await prisma.config.findUnique({
+  where: { key: 'launch_prices_active' }
+});
+const useLaunchPrices = launchActive?.value?.active || false;
+
+// Calcola totale e applica bundle
+let subtotal = 0;
+const orderItems = items.map(item => {
+  const product = productMap[item.productId];
+  const unitPrice = useLaunchPrices && product.launchPrice 
+    ? product.launchPrice 
+    : product.basePrice;
+  const lineTotal = unitPrice * item.quantity;
+  subtotal += lineTotal;
+
+  return {
+    productId: item.productId,
+    color: item.color,
+    size: item.size,
+    quantity: item.quantity,
+    unitPrice,
+    lineTotal
+  };
+});
+
+// Applica sconto bundle (2+ felpe stessa taglia)
+let discount = 0;
+const sizeCounts = {};
+orderItems.forEach(item => {
+  sizeCounts[item.size] = (sizeCounts[item.size] || 0) + item.quantity;
+});
+
+const hasBundleDiscount = Object.values(sizeCounts).some(count => count >= 2);
+if (hasBundleDiscount) {
+  const bundleConfig = await prisma.config.findUnique({
+    where: { key: 'bundle_discount' }
+  });
+  const discountPercentage = bundleConfig?.value?.percentage || 5;
+  discount = subtotal * (discountPercentage / 100);
+}
+
+    // Applica codice promo se presente
+    let promoDiscount = 0;
+    if (promoCode) {
+      const promo = await prisma.promoCode.findUnique({
+        where: { code: promoCode.toUpperCase().trim() }
+      });
+
+      if (promo && promo.isActive) {
+        const afterBundleTotal = subtotal - discount;
+        
+        if (promo.discountType === 'PERCENTAGE') {
+          promoDiscount = afterBundleTotal * (promo.discountValue / 100);
+        } else {
+          promoDiscount = promo.discountValue;
+        }
+
+        promoDiscount = Math.min(promoDiscount, afterBundleTotal);
+
+        // Registra utilizzo
+        await prisma.promoCodeUsage.create({
+          data: {
+            promoCodeId: promo.id,
+            customerEmail
+          }
+        });
+      }
+    }
+
+    const total = subtotal - discount - promoDiscount;
+
+    // Crea ordine
+    const order = await prisma.order.create({
+      data: {
+        customerEmail,
+        customerName,
+        customerPhone, // 🆕
+        subtotal,
+        discount,
+        promoCode: promoCode || null, // 🆕
+        promoDiscount, // 🆕
+        total,
+        paymentMethod: paymentMethod || 'paypal',
+        items: {
+          create: orderItems
+        }
+      },
+      include: {
+        items: {
+          include: { product: true }
+        }
+      }
+    });
+
+    res.json({
+      orderId: order.id,
+      orderNumber: order.orderNumber,
+      total: order.total,
+      paymentUrl: generatePaymentUrl(order)
+    });
+
+  } catch (error) {
+    console.error('Error creating order:', error);
+    res.status(500).json({ error: 'Errore nella creazione dell\'ordine' });
+  }
+});
+
 // POST crea nuovo prodotto - AGGIORNA
 app.post('/api/admin/products', adminAuth, async (req, res) => {
   try {
@@ -492,7 +519,6 @@ app.get('/api/admin/analytics', adminAuth, async (req, res) => {
   }
 });
 
-
 // POST Valida codice promozionale
 app.post('/api/validate-promo', async (req, res) => {
   try {
@@ -528,6 +554,17 @@ app.post('/api/validate-promo', async (req, res) => {
     // Check se già usato da questa email
     if (promoCode.usedBy.length >= promoCode.maxUsesPerUser) {
       return res.status(400).json({ error: 'Codice già utilizzato' });
+    }
+
+    // Check se è limitato a email specifiche
+    if (promoCode.allowedEmails && promoCode.allowedEmails.length > 0) {
+      const isAllowed = promoCode.allowedEmails.some(
+        allowedEmail => allowedEmail.toLowerCase() === email.toLowerCase()
+      );
+      
+      if (!isAllowed) {
+        return res.status(400).json({ error: 'Codice non valido per questo utente' });
+      }
     }
 
     // Calcola sconto
@@ -638,85 +675,6 @@ app.delete('/api/admin/promo-codes/:id', adminAuth, async (req, res) => {
     res.status(500).json({ error: 'Errore nell\'eliminazione' });
   }
 });
-
-// AGGIORNA POST /api/orders per includere promo
-app.post('/api/orders', async (req, res) => {
-  try {
-    const { customerEmail, customerName, customerPhone, items, paymentMethod, promoCode } = req.body;
-
-    if (!customerEmail || !items || items.length === 0) {
-      return res.status(400).json({ error: 'Dati ordine incompleti' });
-    }
-
-    // ... calcolo subtotal e bundle discount (codice esistente)
-
-    // Applica codice promo se presente
-    let promoDiscount = 0;
-    if (promoCode) {
-      const promo = await prisma.promoCode.findUnique({
-        where: { code: promoCode.toUpperCase().trim() }
-      });
-
-      if (promo && promo.isActive) {
-        const afterBundleTotal = subtotal - discount;
-        
-        if (promo.discountType === 'PERCENTAGE') {
-          promoDiscount = afterBundleTotal * (promo.discountValue / 100);
-        } else {
-          promoDiscount = promo.discountValue;
-        }
-
-        promoDiscount = Math.min(promoDiscount, afterBundleTotal);
-
-        // Registra utilizzo
-        await prisma.promoCodeUsage.create({
-          data: {
-            promoCodeId: promo.id,
-            customerEmail
-          }
-        });
-      }
-    }
-
-    const total = subtotal - discount - promoDiscount;
-
-    // Crea ordine
-    const order = await prisma.order.create({
-      data: {
-        customerEmail,
-        customerName,
-        customerPhone, // 🆕
-        subtotal,
-        discount,
-        promoCode: promoCode || null, // 🆕
-        promoDiscount, // 🆕
-        total,
-        paymentMethod: paymentMethod || 'paypal',
-        items: {
-          create: orderItems
-        }
-      },
-      include: {
-        items: {
-          include: { product: true }
-        }
-      }
-    });
-
-    res.json({
-      orderId: order.id,
-      orderNumber: order.orderNumber,
-      total: order.total,
-      paymentUrl: generatePaymentUrl(order)
-    });
-
-  } catch (error) {
-    console.error('Error creating order:', error);
-    res.status(500).json({ error: 'Errore nella creazione dell\'ordine' });
-  }
-});
-
-
 
 // Al posto di nodemailer, usa Resend
 const { Resend } = require('resend');

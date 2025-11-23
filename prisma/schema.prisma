@@ -54,6 +54,7 @@ model PromoCode {
   // Limiti e validità
   expiresAt   DateTime?
   maxUsesPerUser Int   @default(1) // Max 1 volta per email
+  allowedEmails   String[] // Lista email autorizzate (vuoto = tutti)
   isActive    Boolean  @default(true)
   
   // Tracking utilizzi
@@ -124,7 +125,7 @@ model Order {
 enum PaymentStatus {
   PENDING      // In attesa pagamento
   PAID         // Pagato e confermato
-  DELIVERED    // 🆕 Consegnato
+  DELIVERED    // Consegnato
   FAILED       // Pagamento fallito
   REFUNDED     // Rimborsato
 }
