@@ -15,6 +15,15 @@ const ADMIN_TOKEN = process.env.ADMIN_TOKEN;
 const SCOPES = ['https://www.googleapis.com/auth/gmail.readonly'];
 const CREDENTIALS_PATH = path.join(__dirname, 'gmail-credentials.json');
 
+// Verifica configurazione critica
+if (!ADMIN_TOKEN) {
+  console.warn('⚠️ ADMIN_TOKEN non configurato. Le chiamate API falliranno in produzione.');
+  if (process.env.NODE_ENV === 'production') {
+    console.error('❌ ADMIN_TOKEN è obbligatorio in produzione!');
+    process.exit(1);
+  }
+}
+
 // ==================================
 // DATABASE TOKEN MANAGEMENT
 // ==================================
@@ -274,7 +283,13 @@ function splitName(fullName) {
 // ==================================
 
 async function matchOrderWithPayment(paymentData) {
-  console.log('[Match] Searching order for:', paymentData);
+  console.log('[Match] Searching order for:', {
+    uniqueCode: paymentData.uniqueCode,
+    orderNumber: paymentData.orderNumber,
+    amount: paymentData.amount,
+    email: paymentData.customerEmail,
+    name: paymentData.customerName
+  });
 
   // Strategia 1: Match per uniqueCode (massima priorità!)
   if (paymentData.uniqueCode) {
@@ -397,6 +412,8 @@ async function matchOrderWithPayment(paymentData) {
 
 async function updateOrderViaAPI(orderId, updateData) {
   try {
+    console.log(`[API] Updating order ${orderId} via backend API...`);
+    
     const response = await fetch(`${BACKEND_URL}/api/admin/orders/${orderId}`, {
       method: 'PUT',
       headers: {
@@ -411,9 +428,19 @@ async function updateOrderViaAPI(orderId, updateData) {
       throw new Error(error.error || `HTTP ${response.status}`);
     }
 
-    return await response.json();
+    const result = await response.json();
+    console.log('[API] ✅ Order updated successfully');
+    return result;
   } catch (error) {
-    console.error('[API] Error updating order:', error.message);
+    console.error('[API] ❌ Error updating order:', error.message);
+    
+    // Log più dettagliato per troubleshooting
+    if (error.message.includes('401')) {
+      console.error('[API] 💡 Verifica che ADMIN_TOKEN sia corretto');
+    } else if (error.message.includes('fetch')) {
+      console.error('[API] 💡 Verifica che BACKEND_URL sia raggiungibile:', BACKEND_URL);
+    }
+    
     throw error;
   }
 }
@@ -453,6 +480,7 @@ async function processPayPalMessage(gmail, messageId) {
 
     if (order) {
       try {
+        // 🆕 Aggiorna tramite API (così invia anche l'email di conferma)
         await updateOrderViaAPI(order.id, {
           paymentStatus: 'PAID',
           paymentId: paymentData.transactionId || `PAYPAL-${Date.now()}`,
@@ -461,8 +489,9 @@ async function processPayPalMessage(gmail, messageId) {
             : 'Pagamento confermato automaticamente via Gmail Parser'
         });
         
-        console.log(`[PayPal] ✅ Order #${order.orderNumber} marked as PAID (email sent)`);
+        console.log(`[PayPal] ✅ Order #${order.orderNumber} marked as PAID (email sent via API)`);
 
+        // Log successo nel database
         await prisma.paymentLog.create({
           data: {
             orderId: order.id,
@@ -473,8 +502,19 @@ async function processPayPalMessage(gmail, messageId) {
         });
         
         return true;
-      } catch (error) {
-        console.error('[PayPal] ❌ Error updating order:', error.message);
+      } catch (apiError) {
+        console.error('[PayPal] ❌ API call failed:', apiError.message);
+        
+        // Log fallimento
+        await prisma.paymentLog.create({
+          data: {
+            orderId: order.id,
+            source: 'gmail_parser_paypal',
+            status: 'matched_but_update_failed',
+            rawData: { subject, date, paymentData, error: apiError.message }
+          }
+        });
+        
         return false;
       }
     } else {
@@ -528,6 +568,7 @@ async function processRevolutMessage(gmail, messageId) {
 
     if (order) {
       try {
+        // 🆕 Aggiorna tramite API (così invia anche l'email di conferma)
         await updateOrderViaAPI(order.id, {
           paymentStatus: 'PAID',
           paymentId: paymentData.reference || `REVOLUT-${Date.now()}`,
@@ -536,8 +577,9 @@ async function processRevolutMessage(gmail, messageId) {
             : 'Pagamento confermato automaticamente via Gmail Parser'
         });
 
-        console.log(`[Revolut] ✅ Order #${order.orderNumber} marked as PAID (email sent)`);
+        console.log(`[Revolut] ✅ Order #${order.orderNumber} marked as PAID (email sent via API)`);
 
+        // Log successo nel database
         await prisma.paymentLog.create({
           data: {
             orderId: order.id,
@@ -548,8 +590,19 @@ async function processRevolutMessage(gmail, messageId) {
         });
 
         return true;
-      } catch (error) {
-        console.error('[Revolut] ❌ Error updating order:', error.message);
+      } catch (apiError) {
+        console.error('[Revolut] ❌ API call failed:', apiError.message);
+        
+        // Log fallimento
+        await prisma.paymentLog.create({
+          data: {
+            orderId: order.id,
+            source: 'gmail_parser_revolut',
+            status: 'matched_but_update_failed',
+            rawData: { subject, date, paymentData, error: apiError.message }
+          }
+        });
+        
         return false;
       }
     } else {
@@ -647,6 +700,8 @@ async function checkPayments() {
 if (require.main === module) {
   console.log('🚀 Gmail Parser starting...');
   console.log('Environment:', process.env.NODE_ENV || 'development');
+  console.log('Backend URL:', BACKEND_URL);
+  console.log('Admin Token:', ADMIN_TOKEN ? '✅ Configured' : '❌ Missing');
   
   // Test connessione all'avvio
   testGmailConnection().then(ok => {
