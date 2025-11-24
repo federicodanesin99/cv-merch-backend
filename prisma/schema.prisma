@@ -129,6 +129,7 @@ model Order {
 enum PaymentStatus {
   PENDING      // In attesa pagamento
   PAID         // Pagato e confermato
+  ORDERED
   DELIVERED    // Consegnato
   FAILED       // Pagamento fallito
   REFUNDED     // Rimborsato
