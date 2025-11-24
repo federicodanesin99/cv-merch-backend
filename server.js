@@ -1101,7 +1101,10 @@ const PORT = process.env.PORT || 3000;
 
 app.listen(PORT, () => {
   console.log(`🚀 MIDA Merch Backend running on port ${PORT}`);
-  await initializeDefaultConfigs();
+    //Inizializza config al primo avvio (non bloccante)
+    initializeDefaultConfigs().catch(err => {
+      console.error('❌ Errore inizializzazione config:', err);
+    });
 });
 
 // Graceful shutdown
