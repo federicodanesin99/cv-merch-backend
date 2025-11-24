@@ -231,7 +231,7 @@ function parsePayPalEmail(subject, body) {
   const transactionMatch = body.match(/(?:Numero transazione|Transaction ID|Codice transazione):\s*([A-Z0-9]+)/i);
   const orderMatch = body.match(/(?:Ordine|Order|MIDA)\s*#?(\d{4})/i);
   const nameMatch = body.match(/Messaggio da\s+([^<]+)</i);
-  const uniqueCodeMatch = body.match(/CLA\$\$EVÈ›NÈ›TA-\d{4}-[A-Z0-9]{4}/i);
+  const uniqueCodeMatch = body.match(/CLA\$\$EV€N€TA-\d{4}-[A-Z0-9]{4}/i);
 
   return {
     amount: amountMatch ? parseFloat(amountMatch[1].replace(',', '.')) : null,
@@ -309,7 +309,7 @@ async function matchOrderWithPayment(paymentData) {
     }
   }
 
-  // Strategia 2: Match per orderNumber
+ /*  // Strategia 2: Match per orderNumber
   if (paymentData.orderNumber) {
     const order = await prisma.order.findFirst({
       where: {
@@ -400,7 +400,7 @@ async function matchOrderWithPayment(paymentData) {
       console.log('[Match] ⚠️ Found by amount only (verify!)');
       return order;
     }
-  }
+  } */
 
   console.log('[Match] ❌ No matching order found');
   return null;
@@ -641,7 +641,7 @@ async function checkPayments() {
     const paypalRes = await gmail.users.messages.list({
       userId: 'me',
       q: paypalQuery,
-      maxResults: 10
+      maxResults: 5
     });
 
     // Query email Revolut
@@ -649,7 +649,7 @@ async function checkPayments() {
     const revolutRes = await gmail.users.messages.list({
       userId: 'me',
       q: revolutQuery,
-      maxResults: 10
+      maxResults: 5
     });
 
     const paypalMessages = paypalRes.data.messages || [];
