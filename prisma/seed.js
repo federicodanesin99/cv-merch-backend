@@ -21,7 +21,7 @@ async function main() {
       slug: 'girocollo',
       basePrice: 44.00,
       launchPrice: 34.00,
-      colors: ['Blue Navy', 'Dark Heather', 'Maroon', 'Dark Chocolate'],
+      colors: ['Blue Nesio', 'Dark Heather', 'Maroon', 'Dark Chocolate'],
       sizes: ['S', 'M', 'L', 'XL', 'XXL'],
       isActive: true
     }

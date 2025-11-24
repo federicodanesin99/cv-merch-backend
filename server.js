@@ -51,6 +51,11 @@ app.get('/api/products', async (req, res) => {
       where: { key: 'bundle_discount' }
     });
 
+    // Config per mostrare/nascondere promo
+    const promoVisibleConfig = await prisma.config.findUnique({
+      where: { key: 'promo_codes_visible' }
+    });
+
     res.json({
       products: products.map(p => ({
         id: p.id,
@@ -65,7 +70,8 @@ app.get('/api/products', async (req, res) => {
         images: p.images || []
       })),
       bundleDiscount: bundleConfig?.value?.percentage || 5,
-      launchActive: launchActive?.value?.active || false
+      launchActive: launchActive?.value?.active || false,
+      promoCodesVisible: promoVisibleConfig?.value?.visible !== false  // Default true
     });
   } catch (error) {
     console.error('Error fetching products:', error);
@@ -1063,6 +1069,31 @@ function generatePaymentUrl(order) {
 }
 
 // ==================================
+// INIZIALIZZA CONFIGURAZIONI DEFAULT
+// ==================================
+async function initializeDefaultConfigs() {
+  try {
+    // Config promo codes visible
+    const promoConfig = await prisma.config.findUnique({
+      where: { key: 'promo_codes_visible' }
+    });
+    
+    if (!promoConfig) {
+      await prisma.config.create({
+        data: {
+          key: 'promo_codes_visible',
+          value: { visible: true },
+          description: 'Mostra il campo codici promo nel checkout'
+        }
+      });
+      console.log('✅ Config promo_codes_visible inizializzata');
+    }
+  } catch (error) {
+    console.error('❌ Errore inizializzazione config:', error);
+  }
+}
+
+// ==================================
 // START SERVER
 // ==================================
 
@@ -1070,6 +1101,7 @@ const PORT = process.env.PORT || 3000;
 
 app.listen(PORT, () => {
   console.log(`🚀 MIDA Merch Backend running on port ${PORT}`);
+  await initializeDefaultConfigs();
 });
 
 // Graceful shutdown
