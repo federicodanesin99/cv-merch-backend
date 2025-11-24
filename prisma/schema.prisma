@@ -208,3 +208,15 @@ model PaymentLog {
   @@index([orderId])
   @@index([createdAt])
 }
+
+model OAuthToken {
+  id           String   @id @default(cuid())
+  provider     String   @unique // "gmail"
+  accessToken  String   @db.Text
+  refreshToken String   @db.Text
+  scope        String?
+  tokenType    String?
+  expiryDate   BigInt?
+  updatedAt    DateTime @updatedAt
+  createdAt    DateTime @default(now())
+}
