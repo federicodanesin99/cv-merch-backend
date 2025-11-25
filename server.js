@@ -546,7 +546,7 @@ app.get('/api/admin/analytics', adminAuth, async (req, res) => {
     
     const revenue = await prisma.order.aggregate({
       where: { 
-        paymentStatus: { in: ['PAID', 'DELIVERED'] }
+        paymentStatus: { in: ['PAID','ORDERED', 'DELIVERED'] }
       },
       _sum: { total: true }
     });
@@ -561,21 +561,21 @@ app.get('/api/admin/analytics', adminAuth, async (req, res) => {
     const paypalOrders = await prisma.order.count({
       where: { 
         paymentMethod: 'paypal',
-        paymentStatus: { in: ['PAID', 'DELIVERED'] }
+        paymentStatus: { in: ['PAID','ORDERED','DELIVERED'] }
       }
     });
 
     const revolutOrders = await prisma.order.count({
       where: { 
         paymentMethod: 'revolut',
-        paymentStatus: { in: ['PAID', 'DELIVERED'] }
+        paymentStatus: { in: ['PAID','ORDERED','DELIVERED'] }
       }
     });
 
     const paypalRevenue = await prisma.order.aggregate({
       where: { 
         paymentMethod: 'paypal',
-        paymentStatus: { in: ['PAID', 'DELIVERED'] }
+        paymentStatus: { in: ['PAID','ORDERED','DELIVERED'] }
       },
       _sum: { total: true }
     });
@@ -583,7 +583,7 @@ app.get('/api/admin/analytics', adminAuth, async (req, res) => {
     const revolutRevenue = await prisma.order.aggregate({
       where: { 
         paymentMethod: 'revolut',
-        paymentStatus: { in: ['PAID', 'DELIVERED'] }
+        paymentStatus: { in: ['PAID','ORDERED','DELIVERED'] }
       },
       _sum: { total: true }
     });
