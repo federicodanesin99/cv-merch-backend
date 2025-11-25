@@ -543,6 +543,7 @@ app.get('/api/admin/analytics', adminAuth, async (req, res) => {
     const totalOrders = await prisma.order.count();
     const paidOrders = await prisma.order.count({ where: { paymentStatus: 'PAID' } });
     const deliveredOrders = await prisma.order.count({ where: { paymentStatus: 'DELIVERED' } });
+    const orderedOrders = await prisma.order.count({ where: { paymentStatus: 'DELIVERED' } });
     
     const revenue = await prisma.order.aggregate({
       where: { 
@@ -591,7 +592,8 @@ app.get('/api/admin/analytics', adminAuth, async (req, res) => {
     res.json({
       totalOrders,
       paidOrders,
-      deliveredOrders, // 🆕
+      deliveredOrders,
+      orderedOrders,
       revenue: revenue._sum.total || 0,
       topProducts,
       paypalOrders,
