@@ -637,7 +637,7 @@ async function checkPayments() {
     const gmail = await getGmailClient();
 
     // Query email PayPal
-    const paypalQuery = 'from:(assistenza@paypal.it OR service@paypal.com) subject:"Hai ricevuto denaro" is:unread';
+    const paypalQuery = 'from:(assistenza@paypal.it OR service@paypal.com) subject:"Hai ricevuto denaro"';
     const paypalRes = await gmail.users.messages.list({
       userId: 'me',
       q: paypalQuery,
@@ -645,7 +645,7 @@ async function checkPayments() {
     });
 
     // Query email Revolut
-    const revolutQuery = 'from:no-reply@revolut.com subject:received is:unread';
+    const revolutQuery = 'from:no-reply@revolut.com subject:received';
     const revolutRes = await gmail.users.messages.list({
       userId: 'me',
       q: revolutQuery,
