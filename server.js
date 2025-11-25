@@ -543,7 +543,7 @@ app.get('/api/admin/analytics', adminAuth, async (req, res) => {
     const totalOrders = await prisma.order.count();
     const paidOrders = await prisma.order.count({ where: { paymentStatus: 'PAID' } });
     const deliveredOrders = await prisma.order.count({ where: { paymentStatus: 'DELIVERED' } });
-    const orderedOrders = await prisma.order.count({ where: { paymentStatus: 'DELIVERED' } });
+    const orderedOrders = await prisma.order.count({ where: { paymentStatus: 'ORDERED' } });
     
     const revenue = await prisma.order.aggregate({
       where: { 
