@@ -996,41 +996,94 @@ app.get('/api/admin/products/stats', adminAuth, async (req, res) => {
 
 
 
-// Al posto di nodemailer, usa Resend
-const { Resend } = require('resend');
-const resend = new Resend(process.env.RESEND_API_KEY);
+// Brevo (ex-Sendinblue) per invio email
+const SibApiV3Sdk = require('sib-api-v3-sdk');
+const defaultClient = SibApiV3Sdk.ApiClient.instance;
+const apiKey = defaultClient.authentications['api-key'];
+apiKey.apiKey = process.env.BREVO_API_KEY;
+const apiInstance = new SibApiV3Sdk.TransactionalEmailsApi();
 
 async function sendOrderConfirmationEmail(order) {
   try {
     const itemsList = order.items.map(item => 
       `${item.quantity}x ${item.product.name} - ${item.color} (${item.size}) = €${item.lineTotal.toFixed(2)}`
-    ).join('\n');
+    ).join('<br>');
 
-    await resend.emails.send({
-      from: 'CLASSE VENETA <onboarding@resend.dev>',
-      to: order.customerEmail,
-      subject: `Ordine #${order.orderNumber.toString().padStart(4, '0')} Confermato`,
-      html: `
-        <h2>Ordine Confermato! 🎉</h2>
-        <p>Ciao ${order.customerName},</p>
-        <p>Il tuo ordine <strong>#${order.orderNumber.toString().padStart(4, '0')}</strong> è stato confermato!</p>
-        
-        <h3>Dettagli:</h3>
-        <pre>${itemsList}</pre>
-        
-        <p><strong>Subtotale:</strong> €${order.subtotal.toFixed(2)}</p>
-        ${order.discount > 0 ? `<p><strong>Sconto Bundle:</strong> -€${order.discount.toFixed(2)}</p>` : ''}
-        ${order.promoDiscount > 0 ? `<p><strong>Codice Promo (${order.promoCode}):</strong> -€${order.promoDiscount.toFixed(2)}</p>` : ''}
-        <p><strong>TOTALE:</strong> €${order.total.toFixed(2)}</p>
-        
-        <p>Riceverai la tua felpa entro 3 settimane!</p>
-        <p>Grazie per il tuo ordine,<br>CLASSE VENETA</p>
-      `
-    });
+    const sendSmtpEmail = new SibApiV3Sdk.SendSmtpEmail();
     
-    console.log(`✅ Email sent to ${order.customerEmail}`);
+    sendSmtpEmail.subject = `Ordine #${order.orderNumber.toString().padStart(4, '0')} Confermato`;
+    sendSmtpEmail.htmlContent = `
+      <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto; padding: 20px;">
+        <div style="text-align: center; margin-bottom: 30px;">
+          <h2 style="color: #000; margin-bottom: 10px;">Ordine Confermato! 🎉</h2>
+        </div>
+        
+        <p style="font-size: 16px;">Ciao <strong>${order.customerName}</strong>,</p>
+        <p style="font-size: 16px;">Il tuo ordine <strong>#${order.orderNumber.toString().padStart(4, '0')}</strong> è stato confermato!</p>
+        
+        <div style="margin: 30px 0;">
+          <h3 style="color: #333; margin-bottom: 15px;">📦 Dettagli Ordine:</h3>
+          <div style="background: #f3f4f6; padding: 20px; border-radius: 8px; border-left: 4px solid #000;">
+            ${itemsList}
+          </div>
+        </div>
+        
+        <div style="background: #f9fafb; padding: 20px; border-radius: 8px; margin: 20px 0;">
+          <table style="width: 100%; border-collapse: collapse;">
+            <tr>
+              <td style="padding: 8px 0; color: #666;">Subtotale:</td>
+              <td style="padding: 8px 0; text-align: right; font-weight: bold;">€${order.subtotal.toFixed(2)}</td>
+            </tr>
+            ${order.discount > 0 ? `
+            <tr>
+              <td style="padding: 8px 0; color: #059669;">Sconto Bundle:</td>
+              <td style="padding: 8px 0; text-align: right; font-weight: bold; color: #059669;">-€${order.discount.toFixed(2)}</td>
+            </tr>
+            ` : ''}
+            ${order.promoDiscount > 0 ? `
+            <tr>
+              <td style="padding: 8px 0; color: #059669;">Codice ${order.promoCode}:</td>
+              <td style="padding: 8px 0; text-align: right; font-weight: bold; color: #059669;">-€${order.promoDiscount.toFixed(2)}</td>
+            </tr>
+            ` : ''}
+            <tr style="border-top: 2px solid #ddd;">
+              <td style="padding: 15px 0 0 0; font-size: 18px; font-weight: bold;">TOTALE:</td>
+              <td style="padding: 15px 0 0 0; text-align: right; font-size: 20px; font-weight: bold; color: #000;">€${order.total.toFixed(2)}</td>
+            </tr>
+          </table>
+        </div>
+        
+        <div style="background: #e0f2fe; border-left: 4px solid #0284c7; padding: 15px; border-radius: 8px; margin: 20px 0;">
+          <p style="margin: 0; color: #0c4a6e;">
+            <strong>⏱️ Tempi di consegna:</strong> Riceverai la tua felpa entro <strong>3 settimane</strong>!
+          </p>
+        </div>
+        
+        <div style="margin-top: 40px; padding-top: 20px; border-top: 1px solid #e5e7eb; text-align: center;">
+          <p style="color: #666; margin: 5px 0;">Grazie per il tuo ordine!</p>
+          <p style="font-weight: bold; font-size: 18px; margin: 10px 0;">CLASSE VENETA</p>
+        </div>
+      </div>
+    `;
+    
+    sendSmtpEmail.sender = { 
+      name: "CLASSE VENETA", 
+      email: "classeveneta@gmail.com" 
+    };
+    
+    sendSmtpEmail.to = [{ 
+      email: order.customerEmail, 
+      name: order.customerName 
+    }];
+
+    await apiInstance.sendTransacEmail(sendSmtpEmail);
+    console.log(`✅ Email inviata a ${order.customerEmail}`);
+    
   } catch (error) {
-    console.error('❌ Email failed:', error);
+    console.error('❌ Errore invio email:', error);
+    if (error.response) {
+      console.error('Dettagli errore Brevo:', error.response.text);
+    }
     throw error;
   }
 }
