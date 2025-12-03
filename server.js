@@ -137,7 +137,7 @@ const adminAuth = (req, res, next) => {
 // GET lista ordini (admin)
 app.get('/api/admin/orders', adminAuth, async (req, res) => {
   try {
-    const { status, page = 1, limit = 20 } = req.query;
+    const { status, page = 1, limit = 1000 } = req.query;
     
     const where = status ? { paymentStatus: status } : {};
     
