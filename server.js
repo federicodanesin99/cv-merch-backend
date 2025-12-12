@@ -170,6 +170,125 @@ app.get('/api/admin/orders', adminAuth, async (req, res) => {
   }
 });
 
+// GET export ordini in Excel
+app.get('/api/admin/orders/export', adminAuth, async (req, res) => {
+  try {
+    const { statuses } = req.query; // es: "PAID,ORDERED"
+    
+    const where = {};
+    if (statuses && statuses !== 'ALL') {
+      where.paymentStatus = { in: statuses.split(',') };
+    }
+    
+    const orders = await prisma.order.findMany({
+      where,
+      include: {
+        items: {
+          include: { product: true }
+        },
+        batch: true
+      },
+      orderBy: { createdAt: 'desc' }
+    });
+
+    // Genera Excel
+    const ExcelJS = require('exceljs');
+    const workbook = new ExcelJS.Workbook();
+    const worksheet = workbook.addWorksheet('Ordini');
+
+    // Header styling
+    worksheet.columns = [
+      { header: 'N. Ordine', key: 'orderNumber', width: 12 },
+      { header: 'Codice Univoco', key: 'uniqueCode', width: 20 },
+      { header: 'Data Ordine', key: 'date', width: 18 },
+      { header: 'Cliente', key: 'customerName', width: 20 },
+      { header: 'Email', key: 'email', width: 25 },
+      { header: 'Telefono', key: 'phone', width: 15 },
+      { header: 'Stato', key: 'status', width: 12 },
+      { header: 'Metodo Pag.', key: 'paymentMethod', width: 12 },
+      { header: 'Prodotto', key: 'product', width: 20 },
+      { header: 'Colore', key: 'color', width: 15 },
+      { header: 'Taglia', key: 'size', width: 10 },
+      { header: 'Qtà', key: 'quantity', width: 8 },
+      { header: 'Prezzo Unit.', key: 'unitPrice', width: 12 },
+      { header: 'Totale Linea', key: 'lineTotal', width: 12 },
+      { header: 'Subtotale Ord.', key: 'subtotal', width: 14 },
+      { header: 'Sconto Bundle', key: 'discount', width: 14 },
+      { header: 'Codice Promo', key: 'promoCode', width: 14 },
+      { header: 'Sconto Promo', key: 'promoDiscount', width: 14 },
+      { header: 'Totale Ord.', key: 'total', width: 12 },
+      { header: 'Lotto', key: 'batch', width: 15 }
+    ];
+
+    // Stile header
+    worksheet.getRow(1).font = { bold: true };
+    worksheet.getRow(1).fill = {
+      type: 'pattern',
+      pattern: 'solid',
+      fgColor: { argb: 'FF000000' }
+    };
+    worksheet.getRow(1).font = { bold: true, color: { argb: 'FFFFFFFF' } };
+
+    // Popola righe
+    orders.forEach(order => {
+      order.items.forEach((item, index) => {
+        worksheet.addRow({
+          orderNumber: `#${order.orderNumber.toString().padStart(4, '0')}`,
+          uniqueCode: order.uniqueCode || '',
+          date: new Date(order.createdAt).toLocaleString('it-IT'),
+          customerName: order.customerName || '',
+          email: order.customerEmail,
+          phone: order.customerPhone || '',
+          status: order.paymentStatus,
+          paymentMethod: order.paymentMethod === 'paypal' ? 'PayPal' : 'Revolut',
+          product: item.product.name,
+          color: item.color,
+          size: item.size,
+          quantity: item.quantity,
+          unitPrice: `€${item.unitPrice.toFixed(2)}`,
+          lineTotal: `€${item.lineTotal.toFixed(2)}`,
+          // Mostra totali solo sulla prima riga dell'ordine
+          subtotal: index === 0 ? `€${order.subtotal.toFixed(2)}` : '',
+          discount: index === 0 && order.discount > 0 ? `-€${order.discount.toFixed(2)}` : '',
+          promoCode: index === 0 && order.promoCode ? order.promoCode : '',
+          promoDiscount: index === 0 && order.promoDiscount > 0 ? `-€${order.promoDiscount.toFixed(2)}` : '',
+          total: index === 0 ? `€${order.total.toFixed(2)}` : '',
+          batch: order.batch ? `Lotto #${order.batch.batchNumber}` : ''
+        });
+      });
+    });
+
+    // Aggiungi bordi
+    worksheet.eachRow((row, rowNumber) => {
+      row.eachCell((cell) => {
+        cell.border = {
+          top: { style: 'thin' },
+          left: { style: 'thin' },
+          bottom: { style: 'thin' },
+          right: { style: 'thin' }
+        };
+      });
+    });
+
+    // Invia file
+    res.setHeader(
+      'Content-Type',
+      'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'
+    );
+    res.setHeader(
+      'Content-Disposition',
+      `attachment; filename=ordini-${new Date().toISOString().split('T')[0]}.xlsx`
+    );
+
+    await workbook.xlsx.write(res);
+    res.end();
+    
+  } catch (error) {
+    console.error('Error exporting orders:', error);
+    res.status(500).json({ error: 'Errore nell\'esportazione' });
+  }
+});
+
 // PUT aggiorna stato ordine
 app.put('/api/admin/orders/:id', adminAuth, async (req, res) => {
   try {
