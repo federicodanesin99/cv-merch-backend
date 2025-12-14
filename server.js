@@ -7,7 +7,13 @@ const app = express();
 const prisma = new PrismaClient();
 
 // Middleware
-app.use(cors());
+// Middleware CORS configurato per dev e production
+app.use(cors({
+  origin: process.env.NODE_ENV === 'production' 
+    ? ['https://classe-veneta-admin.vercel.app', 'https://cv-merch-frontend.vercel.app'] // I tuoi domini production
+    : ['http://localhost:5173', 'http://localhost:5174', 'http://localhost:3001'], // Dev locale
+  credentials: true
+}));
 app.use(express.json());
 
 // ==================================
@@ -171,9 +177,10 @@ app.get('/api/admin/orders', adminAuth, async (req, res) => {
 });
 
 // GET export ordini in Excel
+// GET export ordini in Excel - UNA RIGA PER ORDINE
 app.get('/api/admin/orders/export', adminAuth, async (req, res) => {
   try {
-    const { statuses } = req.query; // es: "PAID,ORDERED"
+    const { statuses } = req.query;
     
     const where = {};
     if (statuses && statuses !== 'ALL') {
@@ -185,8 +192,7 @@ app.get('/api/admin/orders/export', adminAuth, async (req, res) => {
       include: {
         items: {
           include: { product: true }
-        },
-        batch: true
+        }
       },
       orderBy: { createdAt: 'desc' }
     });
@@ -199,25 +205,20 @@ app.get('/api/admin/orders/export', adminAuth, async (req, res) => {
     // Header styling
     worksheet.columns = [
       { header: 'N. Ordine', key: 'orderNumber', width: 12 },
-      { header: 'Codice Univoco', key: 'uniqueCode', width: 20 },
+      { header: 'Codice Univoco', key: 'uniqueCode', width: 22 },
       { header: 'Data Ordine', key: 'date', width: 18 },
       { header: 'Cliente', key: 'customerName', width: 20 },
-      { header: 'Email', key: 'email', width: 25 },
+      { header: 'Email', key: 'email', width: 28 },
       { header: 'Telefono', key: 'phone', width: 15 },
       { header: 'Stato', key: 'status', width: 12 },
       { header: 'Metodo Pag.', key: 'paymentMethod', width: 12 },
-      { header: 'Prodotto', key: 'product', width: 20 },
-      { header: 'Colore', key: 'color', width: 15 },
-      { header: 'Taglia', key: 'size', width: 10 },
-      { header: 'Qtà', key: 'quantity', width: 8 },
-      { header: 'Prezzo Unit.', key: 'unitPrice', width: 12 },
-      { header: 'Totale Linea', key: 'lineTotal', width: 12 },
-      { header: 'Subtotale Ord.', key: 'subtotal', width: 14 },
+      { header: 'Prodotti', key: 'products', width: 50 },
+      { header: 'N. Articoli', key: 'totalItems', width: 12 },
+      { header: 'Subtotale', key: 'subtotal', width: 12 },
       { header: 'Sconto Bundle', key: 'discount', width: 14 },
       { header: 'Codice Promo', key: 'promoCode', width: 14 },
       { header: 'Sconto Promo', key: 'promoDiscount', width: 14 },
-      { header: 'Totale Ord.', key: 'total', width: 12 },
-      { header: 'Lotto', key: 'batch', width: 15 }
+      { header: 'Totale', key: 'total', width: 12 }
     ];
 
     // Stile header
@@ -229,45 +230,59 @@ app.get('/api/admin/orders/export', adminAuth, async (req, res) => {
     };
     worksheet.getRow(1).font = { bold: true, color: { argb: 'FFFFFFFF' } };
 
-    // Popola righe
+    // Popola righe - UNA per ordine
     orders.forEach(order => {
-      order.items.forEach((item, index) => {
-        worksheet.addRow({
-          orderNumber: `#${order.orderNumber.toString().padStart(4, '0')}`,
-          uniqueCode: order.uniqueCode || '',
-          date: new Date(order.createdAt).toLocaleString('it-IT'),
-          customerName: order.customerName || '',
-          email: order.customerEmail,
-          phone: order.customerPhone || '',
-          status: order.paymentStatus,
-          paymentMethod: order.paymentMethod === 'paypal' ? 'PayPal' : 'Revolut',
-          product: item.product.name,
-          color: item.color,
-          size: item.size,
-          quantity: item.quantity,
-          unitPrice: `€${item.unitPrice.toFixed(2)}`,
-          lineTotal: `€${item.lineTotal.toFixed(2)}`,
-          // Mostra totali solo sulla prima riga dell'ordine
-          subtotal: index === 0 ? `€${order.subtotal.toFixed(2)}` : '',
-          discount: index === 0 && order.discount > 0 ? `-€${order.discount.toFixed(2)}` : '',
-          promoCode: index === 0 && order.promoCode ? order.promoCode : '',
-          promoDiscount: index === 0 && order.promoDiscount > 0 ? `-€${order.promoDiscount.toFixed(2)}` : '',
-          total: index === 0 ? `€${order.total.toFixed(2)}` : '',
-          batch: order.batch ? `Lotto #${order.batch.batchNumber}` : ''
-        });
+      // Costruisci stringa prodotti
+      const productsText = order.items.map(item => 
+        `${item.quantity}x ${item.product.name} - ${item.color} (${item.size}) = €${item.lineTotal.toFixed(2)}`
+      ).join('\n');
+
+      // Conta totale articoli
+      const totalItems = order.items.reduce((sum, item) => sum + item.quantity, 0);
+
+      worksheet.addRow({
+        orderNumber: `#${order.orderNumber.toString().padStart(4, '0')}`,
+        uniqueCode: order.uniqueCode || '',
+        date: new Date(order.createdAt).toLocaleString('it-IT'),
+        customerName: order.customerName || '',
+        email: order.customerEmail,
+        phone: order.customerPhone || '',
+        status: order.paymentStatus,
+        paymentMethod: order.paymentMethod === 'paypal' ? 'PayPal' : 'Revolut',
+        products: productsText,
+        totalItems: totalItems,
+        subtotal: `€${order.subtotal.toFixed(2)}`,
+        discount: order.discount > 0 ? `-€${order.discount.toFixed(2)}` : '',
+        promoCode: order.promoCode || '',
+        promoDiscount: order.promoDiscount > 0 ? `-€${order.promoDiscount.toFixed(2)}` : '',
+        total: `€${order.total.toFixed(2)}`
       });
     });
 
-    // Aggiungi bordi
+    // Aggiungi bordi e wrap text per colonna prodotti
     worksheet.eachRow((row, rowNumber) => {
-      row.eachCell((cell) => {
+      row.eachCell((cell, colNumber) => {
         cell.border = {
           top: { style: 'thin' },
           left: { style: 'thin' },
           bottom: { style: 'thin' },
           right: { style: 'thin' }
         };
+        
+        // Wrap text per colonna prodotti (colonna 9)
+        if (colNumber === 9) {
+          cell.alignment = { 
+            wrapText: true, 
+            vertical: 'top',
+            horizontal: 'left'
+          };
+        }
       });
+      
+      // Auto-height per righe con prodotti multipli (non per header)
+      if (rowNumber > 1) {
+        row.height = undefined; // Auto height
+      }
     });
 
     // Invia file
@@ -285,10 +300,9 @@ app.get('/api/admin/orders/export', adminAuth, async (req, res) => {
     
   } catch (error) {
     console.error('Error exporting orders:', error);
-    res.status(500).json({ error: 'Errore nell\'esportazione' });
+    res.status(500).json({ error: 'Errore nell\'esportazione: ' + error.message });
   }
 });
-
 // PUT aggiorna stato ordine
 app.put('/api/admin/orders/:id', adminAuth, async (req, res) => {
   try {
