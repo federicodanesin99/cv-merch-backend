@@ -11,7 +11,7 @@ const prisma = new PrismaClient();
 app.use(cors({
   origin: process.env.NODE_ENV === 'production' 
     ? ['https://classe-veneta-admin.vercel.app', 'https://cv-merch-frontend.vercel.app', 'https://admin-panel-cluuxuxpb-classe-venetas-projects.vercel.app', 'https://admin-panel-ashy-two.vercel.app'] // I tuoi domini production
-    : ['http://localhost:5173', 'http://localhost:5174', 'http://localhost:3001'], // Dev locale
+    : ['http://localhost:5173', 'http://localhost:5174', 'http://localhost:3001', 'http://localhost:4200'], // Dev locale
   credentials: true
 }));
 app.use(express.json());
@@ -416,54 +416,54 @@ app.post('/api/orders', async (req, res) => {
     }
 
     // Recupera prodotti per calcolare prezzi
-const productIds = [...new Set(items.map(i => i.productId))];
-const products = await prisma.product.findMany({
-  where: { id: { in: productIds } }
-});
+    const productIds = [...new Set(items.map(i => i.productId))];
+    const products = await prisma.product.findMany({
+      where: { id: { in: productIds } }
+    });
 
-const productMap = Object.fromEntries(products.map(p => [p.id, p]));
+    const productMap = Object.fromEntries(products.map(p => [p.id, p]));
 
-// Check prezzi lancio attivi
-const launchActive = await prisma.config.findUnique({
-  where: { key: 'launch_prices_active' }
-});
-const useLaunchPrices = launchActive?.value?.active || false;
+    // Check prezzi lancio attivi
+    const launchActive = await prisma.config.findUnique({
+      where: { key: 'launch_prices_active' }
+    });
+    const useLaunchPrices = launchActive?.value?.active || false;
 
-// Calcola totale e applica bundle
-let subtotal = 0;
-const orderItems = items.map(item => {
-  const product = productMap[item.productId];
-  const unitPrice = useLaunchPrices && product.launchPrice 
-    ? product.launchPrice 
-    : product.basePrice;
-  const lineTotal = unitPrice * item.quantity;
-  subtotal += lineTotal;
+    // Calcola totale e applica bundle
+    let subtotal = 0;
+    const orderItems = items.map(item => {
+      const product = productMap[item.productId];
+      const unitPrice = useLaunchPrices && product.launchPrice 
+        ? product.launchPrice 
+        : product.basePrice;
+      const lineTotal = unitPrice * item.quantity;
+      subtotal += lineTotal;
 
-  return {
-    productId: item.productId,
-    color: item.color,
-    size: item.size,
-    quantity: item.quantity,
-    unitPrice,
-    lineTotal
-  };
-});
+      return {
+        productId: item.productId,
+        color: item.color,
+        size: item.size,
+        quantity: item.quantity,
+        unitPrice,
+        lineTotal
+      };
+    });
 
-// Applica sconto bundle (2+ felpe stessa taglia)
-let discount = 0;
-const sizeCounts = {};
-orderItems.forEach(item => {
-  sizeCounts[item.size] = (sizeCounts[item.size] || 0) + item.quantity;
-});
+    // Applica sconto bundle (2+ felpe stessa taglia)
+    let discount = 0;
+    const sizeCounts = {};
+    orderItems.forEach(item => {
+      sizeCounts[item.size] = (sizeCounts[item.size] || 0) + item.quantity;
+    });
 
-const hasBundleDiscount = Object.values(sizeCounts).some(count => count >= 2);
-if (hasBundleDiscount) {
-  const bundleConfig = await prisma.config.findUnique({
-    where: { key: 'bundle_discount' }
-  });
-  const discountPercentage = bundleConfig?.value?.percentage || 5;
-  discount = subtotal * (discountPercentage / 100);
-}
+    const hasBundleDiscount = Object.values(sizeCounts).some(count => count >= 2);
+    if (hasBundleDiscount) {
+      const bundleConfig = await prisma.config.findUnique({
+        where: { key: 'bundle_discount' }
+      });
+      const discountPercentage = bundleConfig?.value?.percentage || 5;
+      discount = subtotal * (discountPercentage / 100);
+    }
 
     // Applica codice promo se presente
     let promoDiscount = 0;
@@ -535,6 +535,84 @@ if (hasBundleDiscount) {
   } catch (error) {
     console.error('Error creating order:', error);
     res.status(500).json({ error: 'Errore nella creazione dell\'ordine' });
+  }
+});
+
+// POST /api/admin/orders/manual
+app.post('/api/admin/orders/manual', adminAuth, async (req, res) => {
+  const { 
+    customerName, customerEmail, customerPhone,
+    paymentMethod, paymentStatus,
+    items,
+    customTotal,
+    notes
+  } = req.body;
+
+  try {
+    // Genera orderNumber progressivo
+    const lastOrder = await prisma.order.findFirst({
+      orderBy: { orderNumber: 'desc' }
+    });
+    const orderNumber = (lastOrder?.orderNumber || 0) + 1;
+
+    // Carica tutti i prodotti una volta
+    const productIds = [...new Set(items.map(i => i.productId))];
+    const products = await prisma.product.findMany({
+      where: { id: { in: productIds } }
+    });
+    const productMap = Object.fromEntries(products.map(p => [p.id, p]));
+
+    // Calcola totale
+    let total = customTotal || 0;
+    if (!customTotal) {
+      total = items.reduce((sum, item) => {
+        const product = productMap[item.productId];
+        const price = item.customPrice || product.launchPrice || product.basePrice;
+        return sum + (price * item.quantity);
+      }, 0);
+    }
+
+    // Crea ordine
+    const order = await prisma.order.create({
+      data: {
+        orderNumber,
+        uniqueCode: generateUniqueOrderCode(orderNumber),
+        customerName,
+        customerEmail,
+        customerPhone,
+        paymentMethod,
+        paymentStatus,
+        total,
+        subtotal: total,
+        discount: 0,
+        promoDiscount: 0,
+        paidAt: paymentStatus !== 'PENDING' ? new Date() : null,
+        items: {
+          create: items.map(item => {
+            const product = productMap[item.productId]; // Ora product esiste
+            const unitPrice = item.customPrice || product.launchPrice || product.basePrice;
+            return {
+              productId: item.productId,
+              quantity: item.quantity,
+              color: item.color,
+              size: item.size,
+              unitPrice,
+              lineTotal: unitPrice * item.quantity
+            };
+          })
+        }
+      },
+      include: {
+        items: {
+          include: { product: true }
+        }
+      }
+    });
+
+    res.json(order);
+  } catch (error) {
+    console.error('Error creating manual order:', error);
+    res.status(500).json({ error: error.message });
   }
 });
 
