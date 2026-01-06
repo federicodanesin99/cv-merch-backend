@@ -62,27 +62,31 @@ app.get('/api/products', async (req, res) => {
       where: { key: 'bundle_discount' }
     });
 
-    // Config per mostrare/nascondere promo
     const promoVisibleConfig = await prisma.config.findUnique({
       where: { key: 'promo_codes_visible' }
     });
+
+    // Estrai categorie uniche
+    const categories = [...new Set(products.map(p => p.category).filter(Boolean))].sort();
 
     res.json({
       products: products.map(p => ({
         id: p.id,
         name: p.name,
         slug: p.slug,
-        description: p.description, // 🆕
-        sizeGuide: p.sizeGuide, // 🆕
-        basePrice: p.basePrice, // 🆕 Sempre invia basePrice
-        price: launchActive?.value?.active && p.launchPrice ? p.launchPrice : p.basePrice, // Prezzo corrente
+        category: p.category, // ✅ Aggiungi category
+        description: p.description,
+        sizeGuide: p.sizeGuide,
+        basePrice: p.basePrice,
+        price: launchActive?.value?.active && p.launchPrice ? p.launchPrice : p.basePrice,
         colors: p.colors,
         sizes: p.sizes,
         images: p.images || []
       })),
+      categories, // ✅ Aggiungi lista categorie
       bundleDiscount: bundleConfig?.value?.percentage || 5,
       launchActive: launchActive?.value?.active || false,
-      promoCodesVisible: promoVisibleConfig?.value?.visible !== false  // Default true
+      promoCodesVisible: promoVisibleConfig?.value?.visible !== false
     });
   } catch (error) {
     console.error('Error fetching products:', error);
@@ -624,7 +628,11 @@ app.post('/api/admin/orders/manual', adminAuth, async (req, res) => {
 // POST crea nuovo prodotto - AGGIORNA
 app.post('/api/admin/products', adminAuth, async (req, res) => {
   try {
-    const { name, slug, basePrice, launchPrice, colors, sizes, isActive, images, description, sizeGuide } = req.body;
+    const { 
+      name, slug, basePrice, launchPrice, 
+      colors, sizes, isActive, images, 
+      description, sizeGuide, category // ✅ Aggiungi category
+    } = req.body;
 
     if (!name || !slug || !basePrice) {
       return res.status(400).json({ error: 'Dati prodotto incompleti' });
@@ -634,8 +642,9 @@ app.post('/api/admin/products', adminAuth, async (req, res) => {
       data: {
         name,
         slug,
-        description: description || null,    // ✅ AGGIUNGI
-        sizeGuide: sizeGuide || null,        // ✅ AGGIUNGI
+        category: category || null, // ✅ Aggiungi category
+        description: description || null,
+        sizeGuide: sizeGuide || null,
         basePrice: parseFloat(basePrice),
         launchPrice: launchPrice ? parseFloat(launchPrice) : null,
         colors: colors || [],
@@ -652,17 +661,23 @@ app.post('/api/admin/products', adminAuth, async (req, res) => {
   }
 });
 
+
 // PUT aggiorna prodotto - AGGIORNA
 app.put('/api/admin/products/:id', adminAuth, async (req, res) => {
   try {
-    const { name, basePrice, launchPrice, colors, sizes, isActive, images, description, sizeGuide } = req.body;
+    const { 
+      name, basePrice, launchPrice, 
+      colors, sizes, isActive, images, 
+      description, sizeGuide, category // ✅ Aggiungi category
+    } = req.body;
 
     const product = await prisma.product.update({
       where: { id: req.params.id },
       data: {
         ...(name && { name }),
-        ...(description !== undefined && { description }),      // ✅ AGGIUNGI
-        ...(sizeGuide !== undefined && { sizeGuide }),         // ✅ AGGIUNGI
+        ...(category !== undefined && { category }), // ✅ Aggiungi category
+        ...(description !== undefined && { description }),
+        ...(sizeGuide !== undefined && { sizeGuide }),
         ...(basePrice !== undefined && { basePrice: parseFloat(basePrice) }),
         ...(launchPrice !== undefined && { launchPrice: launchPrice ? parseFloat(launchPrice) : null }),
         ...(colors && { colors }),
