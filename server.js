@@ -838,7 +838,79 @@ app.get('/api/admin/analytics', adminAuth, async (req, res) => {
   }
 });
 
-// POST Valida codice promozionale
+
+// Nel file server.js, sostituisci queste sezioni:
+
+// POST crea nuovo promo code - CORRETTO ✅
+app.post('/api/admin/promo-codes', adminAuth, async (req, res) => {
+  try {
+    const { 
+      code, 
+      discountType, 
+      discountValue, 
+      expiresAt, 
+      maxUsesPerUser, 
+      isActive,
+      allowedEmails  // ✅ AGGIUNGI QUESTO
+    } = req.body;
+
+    if (!code || !discountType || discountValue === undefined) {
+      return res.status(400).json({ error: 'Dati incompleti' });
+    }
+
+    const promoCode = await prisma.promoCode.create({
+      data: {
+        code: code.toUpperCase().trim(),
+        discountType,
+        discountValue: parseFloat(discountValue),
+        expiresAt: expiresAt ? new Date(expiresAt) : null,
+        maxUsesPerUser: maxUsesPerUser || 1,
+        isActive: isActive !== undefined ? isActive : true,
+        allowedEmails: allowedEmails || []  // ✅ AGGIUNGI QUESTO
+      }
+    });
+
+    res.json(promoCode);
+  } catch (error) {
+    console.error('Error creating promo code:', error);
+    if (error.code === 'P2002') {
+      res.status(400).json({ error: 'Codice già esistente' });
+    } else {
+      res.status(500).json({ error: 'Errore nella creazione' });
+    }
+  }
+});
+
+// PUT aggiorna promo code - CORRETTO ✅
+app.put('/api/admin/promo-codes/:id', adminAuth, async (req, res) => {
+  try {
+    const { 
+      discountValue, 
+      expiresAt, 
+      maxUsesPerUser, 
+      isActive,
+      allowedEmails  // ✅ AGGIUNGI QUESTO
+    } = req.body;
+
+    const promoCode = await prisma.promoCode.update({
+      where: { id: req.params.id },
+      data: {
+        ...(discountValue !== undefined && { discountValue: parseFloat(discountValue) }),
+        ...(expiresAt !== undefined && { expiresAt: expiresAt ? new Date(expiresAt) : null }),
+        ...(maxUsesPerUser !== undefined && { maxUsesPerUser }),
+        ...(isActive !== undefined && { isActive }),
+        ...(allowedEmails !== undefined && { allowedEmails })  // ✅ AGGIUNGI QUESTO
+      }
+    });
+
+    res.json(promoCode);
+  } catch (error) {
+    console.error('Error updating promo code:', error);
+    res.status(500).json({ error: 'Errore nell\'aggiornamento' });
+  }
+});
+
+// POST Valida codice promozionale - CORRETTO ✅
 app.post('/api/validate-promo', async (req, res) => {
   try {
     const { code, customerEmail, subtotal } = req.body;
@@ -875,10 +947,10 @@ app.post('/api/validate-promo', async (req, res) => {
       return res.status(400).json({ error: 'Codice già utilizzato' });
     }
 
-    // Check se è limitato a email specifiche
+    // ✅ CORRETTO: Check se è limitato a email specifiche
     if (promoCode.allowedEmails && promoCode.allowedEmails.length > 0) {
       const isAllowed = promoCode.allowedEmails.some(
-        allowedEmail => allowedEmail.toLowerCase() === email.toLowerCase()
+        allowedEmail => allowedEmail.toLowerCase().trim() === customerEmail.toLowerCase().trim()
       );
       
       if (!isAllowed) {
@@ -932,56 +1004,6 @@ app.get('/api/admin/promo-codes', adminAuth, async (req, res) => {
   }
 });
 
-app.post('/api/admin/promo-codes', adminAuth, async (req, res) => {
-  try {
-    const { code, discountType, discountValue, expiresAt, maxUsesPerUser, isActive } = req.body;
-
-    if (!code || !discountType || discountValue === undefined) {
-      return res.status(400).json({ error: 'Dati incompleti' });
-    }
-
-    const promoCode = await prisma.promoCode.create({
-      data: {
-        code: code.toUpperCase().trim(),
-        discountType,
-        discountValue: parseFloat(discountValue),
-        expiresAt: expiresAt ? new Date(expiresAt) : null,
-        maxUsesPerUser: maxUsesPerUser || 1,
-        isActive: isActive !== undefined ? isActive : true
-      }
-    });
-
-    res.json(promoCode);
-  } catch (error) {
-    console.error('Error creating promo code:', error);
-    if (error.code === 'P2002') {
-      res.status(400).json({ error: 'Codice già esistente' });
-    } else {
-      res.status(500).json({ error: 'Errore nella creazione' });
-    }
-  }
-});
-
-app.put('/api/admin/promo-codes/:id', adminAuth, async (req, res) => {
-  try {
-    const { discountValue, expiresAt, maxUsesPerUser, isActive } = req.body;
-
-    const promoCode = await prisma.promoCode.update({
-      where: { id: req.params.id },
-      data: {
-        ...(discountValue !== undefined && { discountValue: parseFloat(discountValue) }),
-        ...(expiresAt !== undefined && { expiresAt: expiresAt ? new Date(expiresAt) : null }),
-        ...(maxUsesPerUser !== undefined && { maxUsesPerUser }),
-        ...(isActive !== undefined && { isActive })
-      }
-    });
-
-    res.json(promoCode);
-  } catch (error) {
-    console.error('Error updating promo code:', error);
-    res.status(500).json({ error: 'Errore nell\'aggiornamento' });
-  }
-});
 
 app.delete('/api/admin/promo-codes/:id', adminAuth, async (req, res) => {
   try {

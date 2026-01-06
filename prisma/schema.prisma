@@ -55,8 +55,9 @@ model PromoCode {
   // Limiti e validità
   expiresAt   DateTime?
   maxUsesPerUser Int   @default(1) // Max 1 volta per email
-  allowedEmails   String[] // Lista email autorizzate (vuoto = tutti)
+  allowedEmails   Json @default("[]") // Lista email autorizzate (vuoto = tutti)
   isActive    Boolean  @default(true)
+  
   
   // Tracking utilizzi
   usedBy      PromoCodeUsage[]
