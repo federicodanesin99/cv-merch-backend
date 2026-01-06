@@ -12,10 +12,10 @@ app.use(cors({
   origin: process.env.NODE_ENV === 'production' 
     ? ['https://classe-veneta-admin.vercel.app',
        'https://cv-merch-frontend.vercel.app',
-          'https://classeveneta.vercel.app',
-       'https://admin-panel-cluuxuxpb-classe-venetas-projects.vercel.app',
-        'https://admin-panel-ashy-two.vercel.app',
-        'http://localhost:4200'] // I tuoi domini production
+       'https://classeveneta.vercel.app',
+       'https://classeveneta.com',
+       'https://admin-panel-ashy-two.vercel.app',
+       'http://localhost:4200'] 
     : ['http://localhost:5173', 'http://localhost:5174', 'http://localhost:3001', 'http://localhost:4200'], // Dev locale
   credentials: true
 }));
