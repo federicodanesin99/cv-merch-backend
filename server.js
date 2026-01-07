@@ -47,6 +47,7 @@ if (process.env.NODE_ENV === 'production') {
 // ==================================
 
 // GET prodotti e configurazione prezzi
+// GET prodotti e configurazione prezzi
 app.get('/api/products', async (req, res) => {
   try {
     const products = await prisma.product.findMany({
@@ -66,7 +67,6 @@ app.get('/api/products', async (req, res) => {
       where: { key: 'promo_codes_visible' }
     });
 
-    // Estrai categorie uniche
     const categories = [...new Set(products.map(p => p.category).filter(Boolean))].sort();
 
     res.json({
@@ -74,16 +74,17 @@ app.get('/api/products', async (req, res) => {
         id: p.id,
         name: p.name,
         slug: p.slug,
-        category: p.category, // ✅ Aggiungi category
+        category: p.category,
         description: p.description,
         sizeGuide: p.sizeGuide,
         basePrice: p.basePrice,
         price: launchActive?.value?.active && p.launchPrice ? p.launchPrice : p.basePrice,
         colors: p.colors,
         sizes: p.sizes,
-        images: p.images || []
+        images: p.images || [],
+        isComingSoon: p.isComingSoon || false  // ✅ ASSICURATI CHE SIA QUI
       })),
-      categories, // ✅ Aggiungi lista categorie
+      categories,
       bundleDiscount: bundleConfig?.value?.percentage || 5,
       launchActive: launchActive?.value?.active || false,
       promoCodesVisible: promoVisibleConfig?.value?.visible !== false
@@ -627,11 +628,13 @@ app.post('/api/admin/orders/manual', adminAuth, async (req, res) => {
 
 // POST crea nuovo prodotto - AGGIORNA
 app.post('/api/admin/products', adminAuth, async (req, res) => {
+  console.log('📥 Received product data:', req.body);
+  console.log('🔍 isComingSoon value:', req.body.isComingSoon);
   try {
     const { 
       name, slug, basePrice, launchPrice, 
       colors, sizes, isActive, images, 
-      description, sizeGuide, category // ✅ Aggiungi category
+      description, sizeGuide, category,isComingSoon
     } = req.body;
 
     if (!name || !slug || !basePrice) {
@@ -642,7 +645,7 @@ app.post('/api/admin/products', adminAuth, async (req, res) => {
       data: {
         name,
         slug,
-        category: category || null, // ✅ Aggiungi category
+        category: category || null,
         description: description || null,
         sizeGuide: sizeGuide || null,
         basePrice: parseFloat(basePrice),
@@ -650,10 +653,12 @@ app.post('/api/admin/products', adminAuth, async (req, res) => {
         colors: colors || [],
         sizes: sizes || ['S', 'M', 'L', 'XL', 'XXL'],
         isActive: isActive !== undefined ? isActive : true,
+        isComingSoon: isComingSoon !== undefined ? isComingSoon : false,  // ✅ AGGIUNGI QUESTO
         images: images || []
       }
     });
 
+    console.log('✅ Prodotto creato:', product.name, 'Coming Soon:', product.isComingSoon);
     res.json(product);
   } catch (error) {
     console.error('Error creating product:', error);
@@ -668,7 +673,7 @@ app.put('/api/admin/products/:id', adminAuth, async (req, res) => {
     const { 
       name, basePrice, launchPrice, 
       colors, sizes, isActive, images, 
-      description, sizeGuide, category // ✅ Aggiungi category
+      description, sizeGuide, category, isComingSoon
     } = req.body;
 
     const product = await prisma.product.update({
@@ -683,17 +688,18 @@ app.put('/api/admin/products/:id', adminAuth, async (req, res) => {
         ...(colors && { colors }),
         ...(sizes && { sizes }),
         ...(isActive !== undefined && { isActive }),
+        ...(isComingSoon !== undefined && { isComingSoon }),
         ...(images !== undefined && { images })
       }
     });
 
+    console.log('✅ Prodotto aggiornato:', product.name, 'Coming Soon:', product.isComingSoon);
     res.json(product);
   } catch (error) {
     console.error('Error updating product:', error);
     res.status(500).json({ error: 'Errore nell\'aggiornamento prodotto' });
   }
 });
-
 // DELETE elimina prodotto
 app.delete('/api/admin/products/:id', adminAuth, async (req, res) => {
   try {
