@@ -29,6 +29,7 @@ model Product {
   basePrice   Float
   launchPrice Float?
   isActive    Boolean  @default(true)
+  isComingSoon  Boolean   @default(false) 
   
   colors      Json
   sizes       Json
@@ -39,8 +40,28 @@ model Product {
   
   createdAt   DateTime @default(now())
   updatedAt   DateTime @updatedAt
+  interests     ProductInterest[]
   
   @@index([slug])
+}
+
+
+model ProductInterest {
+  id              String    @id @default(cuid())
+  productId       String
+  userEmail       String
+  userName        String
+  preferredColor  String?
+  preferredSize   String?
+  notifiedAt      DateTime?
+  createdAt       DateTime  @default(now())
+  updatedAt       DateTime  @updatedAt
+  
+  product         Product   @relation(fields: [productId], references: [id], onDelete: Cascade)
+  
+  @@unique([productId, userEmail])
+  @@index([productId])
+  @@index([userEmail])
 }
 
 

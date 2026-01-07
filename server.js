@@ -1250,7 +1250,6 @@ app.get('/api/admin/products/stats', adminAuth, async (req, res) => {
 });
 
 
-
 // Brevo (ex-Sendinblue) per invio email
 const SibApiV3Sdk = require('sib-api-v3-sdk');
 const defaultClient = SibApiV3Sdk.ApiClient.instance;
@@ -1421,3 +1420,319 @@ process.on('SIGTERM', async () => {
   await prisma.$disconnect();
   process.exit(0);
 });
+
+
+// ==================== PRODUCT INTEREST API ====================
+
+// POST Registra interesse per prodotto (richiede user email da Firebase)
+app.post('/api/products/:productId/register-interest', async (req, res) => {
+  try {
+    const { productId } = req.params;
+    const { userEmail, userName, preferredColor, preferredSize } = req.body;
+
+    if (!userEmail || !userName) {
+      return res.status(400).json({ error: 'Email e nome obbligatori' });
+    }
+
+    // Verifica che il prodotto esista ed sia coming soon
+    const product = await prisma.product.findUnique({
+      where: { id: productId }
+    });
+
+    if (!product) {
+      return res.status(404).json({ error: 'Prodotto non trovato' });
+    }
+
+    if (!product.isComingSoon) {
+      return res.status(400).json({ error: 'Prodotto già disponibile' });
+    }
+
+    // Upsert: crea o aggiorna se già esiste
+    const interest = await prisma.productInterest.upsert({
+      where: {
+        productId_userEmail: {
+          productId,
+          userEmail: userEmail.toLowerCase()
+        }
+      },
+      create: {
+        productId,
+        userEmail: userEmail.toLowerCase(),
+        userName,
+        preferredColor,
+        preferredSize
+      },
+      update: {
+        userName,
+        preferredColor,
+        preferredSize,
+        updatedAt: new Date()
+      }
+    });
+
+    console.log(`✅ Interesse registrato: ${userEmail} per ${product.name}`);
+    
+    // Invia email di conferma
+    await sendInterestConfirmationEmail({
+      email: userEmail,
+      name: userName,
+      productName: product.name
+    });
+
+    res.json({ 
+      success: true, 
+      message: 'Ti avviseremo quando il prodotto sarà disponibile!',
+      interest 
+    });
+
+  } catch (error) {
+    console.error('❌ Errore registrazione interesse:', error);
+    res.status(500).json({ error: 'Errore nella registrazione' });
+  }
+});
+
+// GET Lista utenti interessati (admin)
+app.get('/api/admin/products/:productId/interested-users', adminAuth, async (req, res) => {
+  try {
+    const { productId } = req.params;
+
+    const interests = await prisma.productInterest.findMany({
+      where: { productId },
+      include: {
+        product: {
+          select: { name: true }
+        }
+      },
+      orderBy: { createdAt: 'desc' }
+    });
+
+    const stats = {
+      total: interests.length,
+      notified: interests.filter(i => i.notifiedAt).length,
+      pending: interests.filter(i => !i.notifiedAt).length,
+      byColor: {},
+      bySize: {}
+    };
+
+    interests.forEach(i => {
+      if (i.preferredColor) {
+        stats.byColor[i.preferredColor] = (stats.byColor[i.preferredColor] || 0) + 1;
+      }
+      if (i.preferredSize) {
+        stats.bySize[i.preferredSize] = (stats.bySize[i.preferredSize] || 0) + 1;
+      }
+    });
+
+    res.json({ interests, stats });
+  } catch (error) {
+    console.error('❌ Errore recupero interessati:', error);
+    res.status(500).json({ error: 'Errore nel recupero' });
+  }
+});
+
+// POST Notifica utenti interessati (admin - manuale o automatico)
+app.post('/api/admin/products/:productId/notify-interested', adminAuth, async (req, res) => {
+  try {
+    const { productId } = req.params;
+    const { discountCode, onlyPending = true } = req.body;
+
+    const product = await prisma.product.findUnique({
+      where: { id: productId }
+    });
+
+    if (!product) {
+      return res.status(404).json({ error: 'Prodotto non trovato' });
+    }
+
+    // Trova utenti da notificare
+    const whereClause = { productId };
+    if (onlyPending) {
+      whereClause.notifiedAt = null;
+    }
+
+    const interests = await prisma.productInterest.findMany({
+      where: whereClause
+    });
+
+    if (interests.length === 0) {
+      return res.json({ 
+        success: true, 
+        message: 'Nessun utente da notificare',
+        notified: 0 
+      });
+    }
+
+    // Invia email a tutti
+    let successCount = 0;
+    let failedCount = 0;
+
+    for (const interest of interests) {
+      try {
+        await sendProductAvailableEmail({
+          email: interest.userEmail,
+          name: interest.userName,
+          productName: product.name,
+          productSlug: product.slug,
+          discountCode,
+          preferredColor: interest.preferredColor,
+          preferredSize: interest.preferredSize
+        });
+
+        // Marca come notificato
+        await prisma.productInterest.update({
+          where: { id: interest.id },
+          data: { notifiedAt: new Date() }
+        });
+
+        successCount++;
+        console.log(`✅ Email inviata a ${interest.userEmail}`);
+      } catch (emailError) {
+        console.error(`❌ Errore invio email a ${interest.userEmail}:`, emailError);
+        failedCount++;
+      }
+    }
+
+    res.json({
+      success: true,
+      message: `Notificati ${successCount} utenti`,
+      notified: successCount,
+      failed: failedCount
+    });
+
+  } catch (error) {
+    console.error('❌ Errore notifica interessati:', error);
+    res.status(500).json({ error: 'Errore nella notifica' });
+  }
+});
+
+// ==================== EMAIL FUNCTIONS ====================
+
+async function sendInterestConfirmationEmail({ email, name, productName }) {
+  try {
+    const sendSmtpEmail = new SibApiV3Sdk.SendSmtpEmail();
+    
+    sendSmtpEmail.subject = `✅ Ti avviseremo per "${productName}"`;
+    sendSmtpEmail.htmlContent = `
+      <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto; padding: 20px;">
+        <div style="text-align: center; margin-bottom: 30px;">
+          <h2 style="color: #000; margin-bottom: 10px;">Grazie per l'interesse! 🙏</h2>
+        </div>
+        
+        <p style="font-size: 16px;">Ciao <strong>${name}</strong>,</p>
+        <p style="font-size: 16px;">
+          Abbiamo registrato il tuo interesse per <strong>${productName}</strong>.
+        </p>
+        
+        <div style="background: #f3f4f6; padding: 20px; border-radius: 8px; border-left: 4px solid #000; margin: 30px 0;">
+          <p style="margin: 0; font-size: 14px;">
+            📧 Ti invieremo un'email non appena il prodotto sarà disponibile per l'acquisto!
+          </p>
+        </div>
+        
+        <div style="margin-top: 40px; padding-top: 20px; border-top: 1px solid #e5e7eb; text-align: center;">
+          <p style="color: #666; margin: 5px 0;">A presto!</p>
+          <p style="font-weight: bold; font-size: 18px; margin: 10px 0;">CLASSE VENETA</p>
+        </div>
+      </div>
+    `;
+    
+    sendSmtpEmail.sender = { 
+      name: "CLASSE VENETA", 
+      email: "classeveneta@gmail.com" 
+    };
+    
+    sendSmtpEmail.to = [{ email, name }];
+
+    await apiInstance.sendTransacEmail(sendSmtpEmail);
+    console.log(`✅ Email conferma inviata a ${email}`);
+    
+  } catch (error) {
+    console.error('❌ Errore invio email conferma:', error);
+    throw error;
+  }
+}
+
+async function sendProductAvailableEmail({ 
+  email, name, productName, productSlug, discountCode, 
+  preferredColor, preferredSize 
+}) {
+  try {
+    const sendSmtpEmail = new SibApiV3Sdk.SendSmtpEmail();
+    
+    const productUrl = `${process.env.FRONTEND_URL || 'https://classeveneta.com'}/products/${productSlug}`;
+    
+    let preferenceText = '';
+    if (preferredColor || preferredSize) {
+      preferenceText = '<p style="font-size: 14px; color: #666;">💡 Hai mostrato interesse per: ';
+      if (preferredColor) preferenceText += `<strong>Colore ${preferredColor}</strong>`;
+      if (preferredColor && preferredSize) preferenceText += ' - ';
+      if (preferredSize) preferenceText += `<strong>Taglia ${preferredSize}</strong>`;
+      preferenceText += '</p>';
+    }
+
+    let discountSection = '';
+    if (discountCode) {
+      discountSection = `
+        <div style="background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); padding: 20px; border-radius: 8px; margin: 30px 0; text-align: center;">
+          <p style="color: white; font-size: 16px; margin-bottom: 10px;">🎁 <strong>SCONTO ESCLUSIVO PER TE</strong></p>
+          <p style="color: white; font-size: 24px; font-weight: bold; letter-spacing: 2px; margin: 10px 0;">
+            ${discountCode}
+          </p>
+          <p style="color: rgba(255,255,255,0.9); font-size: 14px; margin-top: 10px;">
+            Usa questo codice al checkout per ottenere il tuo sconto!
+          </p>
+        </div>
+      `;
+    }
+
+    sendSmtpEmail.subject = `🎉 "${productName}" è finalmente disponibile!`;
+    sendSmtpEmail.htmlContent = `
+      <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto; padding: 20px;">
+        <div style="text-align: center; margin-bottom: 30px;">
+          <h2 style="color: #000; margin-bottom: 10px;">È arrivato! 🚀</h2>
+        </div>
+        
+        <p style="font-size: 16px;">Ciao <strong>${name}</strong>,</p>
+        <p style="font-size: 16px;">
+          Ottima notizia! <strong>${productName}</strong> è ora disponibile per l'acquisto! 
+        </p>
+        
+        ${preferenceText}
+        
+        ${discountSection}
+        
+        <div style="text-align: center; margin: 30px 0;">
+          <a href="${productUrl}" 
+             style="display: inline-block; background: #000; color: white; padding: 15px 40px; text-decoration: none; border-radius: 8px; font-weight: bold; font-size: 16px;">
+            👉 ACQUISTA ORA
+          </a>
+        </div>
+        
+        <div style="background: #fef3c7; padding: 15px; border-radius: 8px; border-left: 4px solid #f59e0b; margin: 20px 0;">
+          <p style="margin: 0; font-size: 14px; color: #92400e;">
+            ⚡ <strong>Affrettati!</strong> Le quantità potrebbero essere limitate.
+          </p>
+        </div>
+        
+        <div style="margin-top: 40px; padding-top: 20px; border-top: 1px solid #e5e7eb; text-align: center;">
+          <p style="color: #666; margin: 5px 0;">Grazie per la tua pazienza!</p>
+          <p style="font-weight: bold; font-size: 18px; margin: 10px 0;">CLASSE VENETA</p>
+        </div>
+      </div>
+    `;
+    
+    sendSmtpEmail.sender = { 
+      name: "CLASSE VENETA", 
+      email: "classeveneta@gmail.com" 
+    };
+    
+    sendSmtpEmail.to = [{ email, name }];
+
+    await apiInstance.sendTransacEmail(sendSmtpEmail);
+    console.log(`✅ Email disponibilità inviata a ${email}`);
+    
+  } catch (error) {
+    console.error('❌ Errore invio email disponibilità:', error);
+    throw error;
+  }
+}
