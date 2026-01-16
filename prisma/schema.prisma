@@ -41,6 +41,7 @@ model Product {
   createdAt   DateTime @default(now())
   updatedAt   DateTime @updatedAt
   interests     ProductInterest[]
+  promotionGifts Promotion[] @relation("PromotionGifts")
   
   @@index([slug])
 }
@@ -143,6 +144,9 @@ model Order {
   notes           String?     // Note interne
   createdAt       DateTime    @default(now())
   updatedAt       DateTime    @updatedAt
+
+  promotionUsages PromotionUsage[]
+  appliedPromotions Json? // Array di {id, name, discount}
   
   @@index([customerEmail])
   @@index([paymentStatus])
@@ -242,4 +246,80 @@ model OAuthToken {
   expiryDate   BigInt?
   updatedAt    DateTime @updatedAt
   createdAt    DateTime @default(now())
+}
+
+model Promotion {
+  id          String   @id @default(uuid())
+  name        String   // "Black Friday Bundle"
+  slug        String   @unique
+  description String?  @db.Text
+  isActive    Boolean  @default(true)
+  priority    Int      @default(0) // Per ordinare applicazione (più alto = prima)
+  
+  // 🎨 Tipo promozione
+  type        PromotionType
+  
+  // 💰 Valori sconto
+  discountValue Float?  // 10 (per 10% o 10€)
+  discountTiers Json?   // Per sconti progressivi/cumulativi
+  
+  // 🎯 Condizioni trigger (struttura JSON complessa)
+  conditions  Json     // minQuantity, minCartValue, categories, etc.
+  
+  // 🎁 Regalo/BOGO
+  giftProductId String? // Per free gift
+  giftProduct   Product? @relation("PromotionGifts", fields: [giftProductId], references: [id])
+  bogoConfig    Json?   // {buy: 2, get: 1, discountOnGet: 100}
+  
+  // 📅 Validità temporale
+  startDate   DateTime?
+  endDate     DateTime?
+  
+  // 🎨 Display Frontend
+  badgeText   String?  // "2+1 GRATIS"
+  badgeColor  String?  @default("#FF0000")
+  showProgressBar Boolean @default(false)
+  progressBarText String? // "Aggiungi {remaining} prodotti per -15%"
+  showPopup   Boolean @default(false)
+  popupText   String?
+  
+  // 📊 Limiti utilizzo
+  maxUsesTotal Int?      // Max usi totali
+  maxUsesPerUser Int?    // Max usi per utente
+  usageCount  Int @default(0)
+  usages      PromotionUsage[]
+  
+  // 🔗 Combinabilità
+  combinesWith String[] // IDs altre promo combinabili
+  
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+  
+  @@index([isActive])
+  @@index([priority])
+  @@index([slug])
+}
+
+model PromotionUsage {
+  id          String   @id @default(uuid())
+  promotionId String
+  promotion   Promotion @relation(fields: [promotionId], references: [id], onDelete: Cascade)
+  orderId     String
+  order       Order    @relation(fields: [orderId], references: [id])
+  customerEmail String
+  discountApplied Float
+  createdAt   DateTime @default(now())
+  
+  @@index([promotionId])
+  @@index([customerEmail])
+}
+
+enum PromotionType {
+  PERCENTAGE      // -10%
+  FIXED           // -5€
+  PRICE_FIXED     // Paga solo 15€
+  FREE_SHIPPING   // Spedizione gratis
+  FREE_GIFT       // Regalo omaggio
+  BOGO            // Buy X Get Y
+  TIERED          // Sconto progressivo/cumulativo
 }
