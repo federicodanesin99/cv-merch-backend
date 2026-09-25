@@ -18,7 +18,9 @@ app.use(cors({
       'https://cv-merch-frontend.vercel.app',
       'https://classeveneta.vercel.app',
       'https://classeveneta.com',
+      'https://www.classeveneta.com',
       'https://classeveneta.it',
+      'https://www.classeveneta.it',
       'https://admin-panel-ashy-two.vercel.app',
       'http://localhost:4200']
     : ['http://localhost:5173', 'http://localhost:5174', 'http://localhost:3001', 'http://localhost:4200'], // Dev locale
