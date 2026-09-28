@@ -1,1 +1,7 @@
 node_modules
+
+# Secrets
+.env*
+!.env.example
+gmail-credentials.json
+gmail-token.json

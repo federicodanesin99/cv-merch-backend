@@ -1,0 +1,7 @@
+.git
+node_modules
+plans
+.env*
+!.env.example
+gmail-credentials.json
+gmail-token.json
