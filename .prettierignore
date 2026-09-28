@@ -1,0 +1,11 @@
+dist
+coverage
+src/generated
+plans
+prisma/migrations
+package-lock.json
+server.js
+promotions-engine.js
+gmail-parser-oauth.js
+ecosystem.config.js
+prisma/seed.js

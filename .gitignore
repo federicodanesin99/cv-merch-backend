@@ -5,3 +5,8 @@ node_modules
 !.env.example
 gmail-credentials.json
 gmail-token.json
+
+# Build output
+dist
+coverage
+src/generated
